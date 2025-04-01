@@ -11,12 +11,13 @@ from torch.utils.data import DataLoader
 
 from pytorch_lightning import Trainer
 
-from gan.gan import LitGAN
-from vae.vae import LitVAE
-from datasets.audio_dataset import AudioDataset
-from datasources.fma_datasource import FMADatasource
-from datasets.mp3_validator import MP3ValidatorDataset
-from datasets.lit_data_module import VAEDataModule
+from training.gan.gan import LitGAN
+from training.vae.vae import VAE
+from training.AI_model import AIModel
+from training.datasets.audio_dataset import AudioDataset
+from training.datasources.fma_datasource import FMADatasource
+from training.datasets.mp3_validator import MP3ValidatorDataset
+from training.datasets.lit_data_module import VAEDataModule
 
 from dotenv import load_dotenv
 load_dotenv('./VIU/09MIAR/euterpe/.env')
@@ -75,7 +76,9 @@ def train_gan(datasets_path, valid_files_csv_path):
 
 def train_vae(datasets_path, valid_files_csv_path):
 
-    model = LitVAE()
+    model_base = VAE()
+
+    model = AIModel(model_base)
 
     data_module = get_data_module(datasets_path,valid_files_csv_path)
 
