@@ -29,7 +29,7 @@ class MP3ValidatorDataset(ValidatorDataset):
         self.file_paths = file_paths
         self.labels = labels
         self.counter = 0
-        self.desired_sample_rate = self.SAMPLE_RATE#44100
+        self.desired_sample_rate = self.SAMPLE_RATE
         self.cut_duration = cut_duration
 
         # filter invalid files
@@ -77,11 +77,6 @@ class MP3ValidatorDataset(ValidatorDataset):
                     sample_rate = self.desired_sample_rate 
                 elif sample_rate < self.SAMPLE_RATE:
                         return self.jump_next_file(idx)
-                
-                # if subprocess.run(["mpg123", "-t", file_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
-                #     print('Invalid MP3 file')
-                #     return self.jump_next_file(idx)
-
 
                 num_samples = int(sr * self.cut_duration)
                 waveform = waveform[:num_samples]

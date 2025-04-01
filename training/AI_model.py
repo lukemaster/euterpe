@@ -1,17 +1,14 @@
 import os
 import json
-import math
 import numpy as np
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 
 import torchaudio
 
 import pytorch_lightning as pl
 
-import pandas as pd
 import matplotlib.pyplot as plt
 
 from dotenv import load_dotenv
@@ -44,12 +41,6 @@ class AIModel(pl.LightningModule):
         self.train_epoch_metrics = []
         self.val_epoch_metrics = []
 
-        self.register_buffer("mean_x_buffer", torch.tensor(0.0))
-        self.register_buffer("std_x_buffer", torch.tensor(1.0))
-
-        os.makedirs("logs/csv", exist_ok=True)
-        os.makedirs("logs/img", exist_ok=True)
-        os.makedirs("checkpoints", exist_ok=True)
 
     def load_or_init_genre_limits(self):
         if os.path.exists(self.genre_db_limits_path):
@@ -72,15 +63,6 @@ class AIModel(pl.LightningModule):
     def save_genre_limits(self):
         with open(self.genre_db_limits_path, "w") as f:
             json.dump(self.genre_db_limits, f, indent=2)
-
-    def on_validation_epoch_end(self):
-        if self.val_step_metrics:
-            val_losses = [m["val_loss"] for m in self.val_step_metrics if "val_loss" in m]
-            mean_val_loss = float(np.mean(val_losses))
-            self.val_epoch_metrics.append({
-                "epoch": self.current_epoch,
-                "val_loss": mean_val_loss
-            })
 
     def generate_audio_from_noise(self, genre_id: int, output_path: str = "generated.wav"):
         
