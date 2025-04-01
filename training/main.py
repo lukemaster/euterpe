@@ -29,12 +29,12 @@ print(f'Powered by: {device}')
 
 TRAIN_BATCH_SIZE = int(os.environ.get('TRAIN_BATCH_SIZE'))
 
-def get_dataloader(datasets_path, valid_files_csv_path, num_mels):# TODO: integration inside get_data_module
+def get_dataloader(datasets_path, valid_files_csv_path):# TODO: integration inside get_data_module
     fma_dataset = FMADatasource(datasets_path)
 
     file_paths = fma_dataset.get_file_paths()
     labels = fma_dataset.get_labels()
-    mp3Validator = MP3ValidatorDataset(file_paths,labels,valid_files_csv_path,num_mels,10,25,int(os.environ.get('SAMPLE_RATE'))) #TODO: params
+    mp3Validator = MP3ValidatorDataset(file_paths,labels,valid_files_csv_path,int(os.environ.get('TOTAL_DURATION'))) #TODO: params
      
     _, dict_dataset = fma_dataset.balanced(mp3Validator.getValidFiles() ,int(os.environ.get('LIMIT_FILES')))
 
@@ -50,7 +50,7 @@ def get_dataloader(datasets_path, valid_files_csv_path, num_mels):# TODO: integr
     return dataloader, dataset
 
 def get_data_module(datasets_path, valid_files_csv_path):
-    _, dataset = get_dataloader(datasets_path, valid_files_csv_path, int(os.environ.get('NUM_MELS')))
+    _, dataset = get_dataloader(datasets_path, valid_files_csv_path)
 
     data_module = VAEDataModule(
         train_dataset=dataset,
@@ -72,7 +72,6 @@ def train_gan(datasets_path, valid_files_csv_path):
         max_epochs=int(os.environ.get('TRAIN_EPOCHS')),
         accelerator='auto',
         log_every_n_steps=1,
-        enable_checkpointing=True,
         enable_progress_bar=True
     )
     trainer.fit(model, datamodule=data_module)
@@ -90,7 +89,6 @@ def train_vae(datasets_path, valid_files_csv_path):
         max_epochs=int(os.environ.get('TRAIN_EPOCHS')),
         accelerator='auto',
         log_every_n_steps=1,
-        enable_checkpointing=True,
         enable_progress_bar=True
     )
     trainer.fit(model, datamodule=data_module)

@@ -19,8 +19,8 @@ from dotenv import load_dotenv
 load_dotenv('./VIU/09MIAR/euterpe/.env')
 
 class MP3ValidatorDataset(ValidatorDataset):
-    def __init__(self, file_paths, labels, valid_files_csv_path, n_mels, hop_length_ms, cut_duration, sample_rate):
-        super().__init__(valid_files_csv_path, hop_length_ms, sample_rate, cut_duration)
+    def __init__(self, file_paths, labels, valid_files_csv_path, cut_duration):
+        super().__init__(valid_files_csv_path, cut_duration)
         self.SAMPLE_RATE = int(os.environ.get('SAMPLE_RATE'))
         self.N_FFT = int(os.environ.get('N_FFT'))
         self.HOP_LENGTH = int(os.environ.get('HOP_LENGTH'))
