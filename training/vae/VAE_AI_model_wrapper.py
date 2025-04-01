@@ -31,6 +31,12 @@ class VAEAIModelWrapper(AIModel):
     def __init__(self, model):
         super().__init__()
         self.model = model
+        self.register_buffer("mean_x_buffer", torch.tensor(0.0))
+        self.register_buffer("std_x_buffer", torch.tensor(1.0))
+
+        os.makedirs("logs/csv", exist_ok=True)
+        os.makedirs("logs/img", exist_ok=True)
+        os.makedirs("checkpoints", exist_ok=True)
     
     def forward(self, x, genre):
         x = x[..., :self.SPEC_TIME_STEPS]
@@ -167,6 +173,16 @@ class VAEAIModelWrapper(AIModel):
 
         self.save_genre_limits()
 
+    def on_validation_epoch_end(self):
+        if self.val_step_metrics:
+            val_g_losses = [m["val_g_loss"] for m in self.val_step_metrics if "val_g_loss" in m]
+            val_d_losses = [m["val_d_loss"] for m in self.val_step_metrics if "val_d_loss" in m]
+            if val_g_losses and val_d_losses:
+                self.val_epoch_metrics.append({
+                    "epoch": self.current_epoch,
+                    "val_g_loss": float(np.mean(val_g_losses)),
+                    "val_d_loss": float(np.mean(val_d_losses))
+                })
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", patience=5, factor=0.5, verbose=True)
@@ -179,116 +195,3 @@ class VAEAIModelWrapper(AIModel):
                 "frequency": 1,
             }
         }
-        
-        device = self.device
-        self.eval()
-        vae = self.model
-        KIND_OF_SPECTROGRAM = os.getenv("KIND_OF_SPECTROGRAM", "MEL").upper()
-
-
-        with open(self.model.genre_db_limits_path, "r") as f:
-            genre_db_limits = json.load(f)
-        db_min, db_max = genre_db_limits[str(genre_id)]
-
-        num_segments = int(int(os.environ.get('TOTAL_DURATION')) / int(os.environ.get('SEGMENT_DURATION')))
-        zs = [torch.randn(1, self.LATENT_DIM).to(device) for _ in range(num_segments)]
-        genre = torch.tensor([genre_id], dtype=torch.long).to(device)
-
-        
-        with torch.no_grad():
-            decoded_specs = []
-            for z in zs:
-                spec = vae.decoder(z, genre).squeeze(0).cpu()
-                decoded_specs.append(spec)
-
-        n = 20
-        for i in range(len(decoded_specs)):
-            if decoded_specs[i].shape[-1] >= 3:
-                decoded_specs[i][..., :n] = decoded_specs[i][..., n].unsqueeze(-1).expand_as(decoded_specs[i][..., :n])
-                decoded_specs[i][..., -n:] = decoded_specs[i][..., -n-1].unsqueeze(-1).expand_as(decoded_specs[i][..., -n:])
-
-
-        spec = torch.cat(decoded_specs, dim=-1)
-
-        spec_min = spec.min().item()
-        spec_max = spec.max().item()
-        print(f"[DEBUG] spec antes de denormalizar: min={spec_min:.4f}, max={spec_max:.4f}")
-        if abs(spec_max - spec_min) < 1e-3:
-            print("[WARNING] El espectrograma generado tiene un rango demasiado pequeño")
-
-        try:
-            mean_x = self.model.mean_x_buffer.item() if hasattr(self.model.mean_x_buffer, 'item') else float(self.model.mean_x_buffer)
-            std_x = self.model.std_x_buffer.item() if hasattr(self.model.std_x_buffer, 'item') else float(self.model.std_x_buffer)
-        except Exception as e:
-            print(f"[ERROR] Acceso a mean_x o std_x: {e}")
-            mean_x, std_x = 0.0, 1.0
-
-        if std_x != 0:
-            spec = spec * std_x + mean_x
-
-        spec_db = spec * (db_max - db_min) + db_min
-        spec_amp = torch.pow(10.0, spec_db / 20.0)
-
-        if KIND_OF_SPECTROGRAM != 'MEL':
-            expected_bins = self.N_FFT // 2 + 1
-            if spec_amp.ndim == 2:
-                spec_amp = spec_amp.unsqueeze(0)
-
-            if spec_amp.shape[-2] != expected_bins:
-                print(f"[WARNING] Redimensionando STFT generado de {spec_amp.shape[-2]} a {expected_bins} bandas para GriffinLim")
-                spec_amp = F.interpolate(
-                    spec_amp.unsqueeze(1),
-                    size=(expected_bins, spec_amp.shape[-1]),
-                    mode="bicubic",
-                    align_corners=True
-                ).squeeze(1)
-
-            for i in range(min(5, expected_bins)):
-                spec_amp[0, i, :] *= (i + 1) / 5
-
-            linear_spec = spec_amp.squeeze(0)
-
-            plt.figure(figsize=(12, 4))
-            spec_db_vis = torchaudio.transforms.AmplitudeToDB()(linear_spec.unsqueeze(0)).squeeze(0)
-            plt.imshow(spec_db_vis.numpy(), aspect='auto', origin='lower', cmap='magma')
-            plt.title(f"Espectrograma STFT generado (género {genre_id})")
-            plt.xlabel("Frames temporales")
-            plt.ylabel("Frecuencia (bins)")
-            plt.colorbar(label="Magnitud (dB)")
-        else:
-            inverse_mel = torchaudio.transforms.InverseMelScale(
-                n_stft=self.N_FFT // 2 + 1,
-                n_mels=self.NUM_MELS,
-                sample_rate=self.SAMPLE_RATE,
-            )
-            linear_spec = inverse_mel(spec_amp.unsqueeze(0)).squeeze(0)
-
-            plt.figure(figsize=(12, 4))
-            plt.imshow(spec_db.squeeze(0).numpy(), aspect='auto', origin='lower', cmap='magma')
-            plt.title(f"Espectrograma MEL generado (género {genre_id})")
-            plt.xlabel("Frames temporales")
-            plt.ylabel("Bandas Mel")
-            plt.colorbar(label="Potencia (dB)")
-
-        plt.tight_layout()
-        plt.show()
-
-        griffin_lim = torchaudio.transforms.GriffinLim(
-            n_fft=self.N_FFT,
-            hop_length=self.HOP_LENGTH,
-            win_length=self.N_FFT,
-            power=1.0,
-            n_iter=64,
-            momentum=0.99,
-            length=None,
-            rand_init=True
-        )
-
-        waveform = griffin_lim(linear_spec)
-        if waveform.ndim == 1:
-            waveform = waveform.unsqueeze(0)
-
-        torchaudio.save(output_path, waveform, self.SAMPLE_RATE)
-        print(f"Audio generado guardado en: {output_path}")
-
-        return waveform, zs
