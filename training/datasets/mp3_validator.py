@@ -16,7 +16,7 @@ from .validator_dataset import ValidatorDataset
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 from dotenv import load_dotenv
-load_dotenv('./VIU/09MIAR/src/vae/.env')
+load_dotenv('./VIU/09MIAR/euterpe/.env')
 
 class MP3ValidatorDataset(ValidatorDataset):
     def __init__(self, file_paths, labels, valid_files_csv_path, n_mels, hop_length_ms, cut_duration, sample_rate):

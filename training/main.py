@@ -1,6 +1,5 @@
 ## KEEP IT IN A BLOCK ##
 import numpy as np
-from vae.datasets.lit_data_module import VAEDataModule
 np.complex = complex  # Corrección temporal necesaria para librosa
 ########################
 
@@ -12,20 +11,22 @@ from torch.utils.data import DataLoader
 
 from pytorch_lightning import Trainer
 
-from vae.model import LitVAE
-from .datasets.audio_dataset import AudioDataset
-from .datasources.fma_datasource import FMADatasource
-from .datasets.mp3_validator import MP3ValidatorDataset
+from gan.gan import LitGAN
+from vae.vae import LitVAE
+from datasets.audio_dataset import AudioDataset
+from datasources.fma_datasource import FMADatasource
+from datasets.mp3_validator import MP3ValidatorDataset
+from datasets.lit_data_module import VAEDataModule
 
 from dotenv import load_dotenv
-load_dotenv('./VIU/09MIAR/src/vae/.env')
+load_dotenv('./VIU/09MIAR/euterpe/.env')
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f'Powered by: {device}')
 
 TRAIN_BATCH_SIZE = int(os.environ.get('TRAIN_BATCH_SIZE'))
 
-def get_dataloader(datasets_path, valid_files_csv_path, num_mels):
+def get_dataloader(datasets_path, valid_files_csv_path, num_mels):# TODO: integration inside get_data_module
     fma_dataset = FMADatasource(datasets_path)
 
     file_paths = fma_dataset.get_file_paths()
@@ -45,11 +46,8 @@ def get_dataloader(datasets_path, valid_files_csv_path, num_mels):
 
     return dataloader, dataset
 
-def run(datasets_path, valid_files_csv_path):
-
+def get_data_module(datasets_path, valid_files_csv_path):
     _, dataset = get_dataloader(datasets_path, valid_files_csv_path, int(os.environ.get('NUM_MELS')))
-
-    model = LitVAE()
 
     data_module = VAEDataModule(
         train_dataset=dataset,
@@ -57,6 +55,29 @@ def run(datasets_path, valid_files_csv_path):
         batch_size=TRAIN_BATCH_SIZE,
         num_workers=32
     )
+
+    return data_module
+
+def train_gan(datasets_path, valid_files_csv_path):
+    model = LitGAN()
+
+    data_module = get_data_module(datasets_path,valid_files_csv_path)
+
+    trainer = Trainer(
+        max_epochs=int(os.environ.get('TRAIN_EPOCHS')),
+        accelerator='auto',
+        log_every_n_steps=1,
+        enable_checkpointing=True,
+        enable_progress_bar=True
+    )
+    trainer.fit(model, datamodule=data_module)
+
+
+def train_vae(datasets_path, valid_files_csv_path):
+
+    model = LitVAE()
+
+    data_module = get_data_module(datasets_path,valid_files_csv_path)
 
     trainer = Trainer(
         max_epochs=int(os.environ.get('TRAIN_EPOCHS')),
@@ -70,9 +91,14 @@ def run(datasets_path, valid_files_csv_path):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Ejemplo de llamada: python main.py datasets_path valid_files_csv_path')
-    parser.add_argument('datasets_path', type=str, help='datasets\' path)')
-    parser.add_argument('valid_files_csv_path', type=str, help='valid files csv file path')
+    parser.add_argument('datasets_path', type=str, help='localización del dataset')
+    parser.add_argument('valid_files_csv_path', type=str, help='localización del csv de ficheros válidos del dataset')
+    parser.add_argument('model_to_train', type=str, help='modelo a entrenar: vae o gan')
 
     args = parser.parse_args()
+    model_to_train = args.model_to_train
 
-    run(args.datasets_path, args.valid_files_csv_path)
+    if model_to_train != 'vae':
+        train_gan(args.datasets_path, args.valid_files_csv_path)
+    else:
+        train_vae(args.datasets_path, args.valid_files_csv_path)

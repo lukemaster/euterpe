@@ -10,7 +10,7 @@ import matplotlib.patches as patches
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 from dotenv import load_dotenv
-load_dotenv('./VIU/09MIAR/src/vae/.env')
+load_dotenv('./VIU/09MIAR/euterpe/.env')
 
 class AudioDataset(Dataset):
     def __init__(self, file_paths, labels):
@@ -30,7 +30,11 @@ class AudioDataset(Dataset):
         self.labels = list(labels)
         assert len(self.file_paths) == len(self.labels), "Labels amount don't match with files amount"
 
-        self.SPEC_TIME_STEPS = int(os.environ.get('SPEC_TIME_STEPS'))
+        # self.SPEC_TIME_STEPS = int(os.environ.get('SPEC_TIME_STEPS'))
+
+        SAMPLE_RATE = int(os.environ["SAMPLE_RATE"])
+        HOP_LENGTH = int(os.environ["HOP_LENGTH"])
+        self.SPEC_TIME_STEPS = int((SAMPLE_RATE * int(os.environ.get('SEGMENT_DURATION'))) / HOP_LENGTH)
         self.segments_per_track = int(int(os.environ.get('TOTAL_DURATION')) / int(os.environ.get('SEGMENT_DURATION')))
 
         self.kind_of_spectrogram = os.environ.get('KIND_OF_SPECTROGRAM')

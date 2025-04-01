@@ -15,7 +15,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 from dotenv import load_dotenv
-load_dotenv('./VIU/09MIAR/src/vae/.env')
+load_dotenv('./VIU/09MIAR/euterpe/.env')
 
 class LitVAE(pl.LightningModule):
     BETA_MAX = float(os.environ["BETA_MAX"])
