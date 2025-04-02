@@ -7,13 +7,13 @@ import torch.nn.functional as F
 
 import pytorch_lightning as pl
 
+from training.config import Config
 
-from dotenv import load_dotenv
-load_dotenv('./VIU/09MIAR/euterpe/.env')
+cfg = Config()
 
 
 class GAN(nn.Module):
-    NUM_GENRES = int(os.environ.get('NUM_GENRES'))
+    NUM_GENRES = cfg.NUM_GENRES
     GENRE_EMBEDDING_DIM = (2 ** math.ceil(math.log2(NUM_GENRES)))# * 2 maybe an improvement or not
 
     class GAN_Generator(nn.Module):
@@ -24,10 +24,9 @@ class GAN(nn.Module):
             self.LATENT_DIM = gan.LATENT_DIM
             self.GENRE_EMBEDDING_DIM = gan.GENRE_EMBEDDING_DIM
             self.SPEC_TIME_STEPS = gan.SPEC_TIME_STEPS
-            self.GEN_MODEL_DIM = int(os.environ.get('GEN_MODEL_DIM'))
-            self.GEN_NUM_LAYERS = int(os.environ.get('GEN_NUM_LAYERS'))
-            self.GEN_NUM_HEADS = int(os.environ.get('GEN_NUM_HEADS'))
-            self.NUM_MELS = int(os.environ["NUM_MELS"])
+            self.GEN_MODEL_DIM = cfg.GEN_MODEL_DIM
+            self.GEN_NUM_LAYERS = cfg.GEN_NUM_LAYERS
+            self.GEN_NUM_HEADS = cfg.GEN_NUM_HEADS
 
             self.genre_embedding = nn.Embedding(self.NUM_GENRES, self.GENRE_EMBEDDING_DIM)
             self.input_dim = self.LATENT_DIM + self.GENRE_EMBEDDING_DIM
@@ -45,7 +44,7 @@ class GAN(nn.Module):
             self.to_mel = nn.Sequential(
                 nn.Conv1d(self.GEN_MODEL_DIM, self.GEN_MODEL_DIM // 2, kernel_size=3, padding=1),
                 nn.ReLU(),
-                nn.Conv1d(self.GEN_MODEL_DIM // 2, self.NUM_MELS, kernel_size=3, padding=1),
+                nn.Conv1d(self.GEN_MODEL_DIM // 2, cfg.NUM_MELS, kernel_size=3, padding=1),
                 nn.Tanh()
             )
 
@@ -105,8 +104,8 @@ class GAN(nn.Module):
     class PretrainingGAN(pl.LightningModule):
         def __init__(self, gan):
             super().__init__()
-            self.GAN_PRETRAIN_EPOCHS_G = int(os.environ.get('GAN_PRETRAIN_EPOCHS_G'))
-            self.GAN_PRETRAIN_EPOCHS_D = int(os.environ.get('GAN_PRETRAIN_EPOCHS_D'))                
+            self.GAN_PRETRAIN_EPOCHS_G = cfg.GAN_PRETRAIN_EPOCHS_G
+            self.GAN_PRETRAIN_EPOCHS_D = cfg.GAN_PRETRAIN_EPOCHS_D
             self.LATENT_DIM = gan.LATENT_DIM
             self.SPEC_TIME_STEPS = gan.SPEC_TIME_STEPS
 
@@ -153,8 +152,8 @@ class GAN(nn.Module):
 
     def __init__(self):
         super().__init__()
-        self.LATENT_DIM = int(os.environ.get('LATENT_DIM'))
-        self.SPEC_TIME_STEPS = int((int(os.environ["SAMPLE_RATE"]) * int(os.environ.get('SEGMENT_DURATION'))) / int(os.environ["HOP_LENGTH"]))
+        self.LATENT_DIM = cfg.LATENT_DIM
+        self.SPEC_TIME_STEPS = cfg.SPEC_TIME_STEPS
         self.automatic_optimization = False
         self.generator = self.GAN_Generator(self)
         self.discriminator = self.GAN_Discriminator(self)

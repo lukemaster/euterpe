@@ -1,4 +1,10 @@
-import os
+## KEEP IT IN A BLOCK ##
+# import numpy as np
+# np.complex = complex  # Corrección temporal necesaria para librosa
+import librosa
+import librosa.display
+########################
+
 import torch
 import torchaudio
 import torch.nn as nn
@@ -7,19 +13,21 @@ from torch.utils.data import Dataset
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+import librosa
+import numpy as np
+import torch
 
-from dotenv import load_dotenv
-load_dotenv('./VIU/09MIAR/euterpe/.env')
+from training.config import Config
+
+cfg = Config()
 
 class AudioDataset(Dataset):
     def __init__(self, file_paths, labels):
-        self.SAMPLE_RATE = int(os.environ.get('SAMPLE_RATE'))
-        self.N_FFT = int(os.environ.get('N_FFT'))
-        self.HOP_LENGTH = int(os.environ.get('HOP_LENGTH'))
-        self.NUM_MELS = int(os.environ.get('NUM_MELS'))
-
-        self.SEGMENT_DURATION = int(os.environ.get('SEGMENT_DURATION'))
+        self.SAMPLE_RATE = cfg.SAMPLE_RATE
+        self.N_FFT = cfg.N_FFT
+        self.HOP_LENGTH = cfg.HOP_LENGTH
+        self.TOTAL_DURATION = cfg.TOTAL_DURATION
+        self.SEGMENT_DURATION = cfg.SEGMENT_DURATION
         self.segment_samples = self.SEGMENT_DURATION * self.SAMPLE_RATE
         adjustment = 0
         if (self.segment_samples + (self.N_FFT - self.HOP_LENGTH)) % self.HOP_LENGTH != 0:
@@ -30,9 +38,9 @@ class AudioDataset(Dataset):
         self.labels = list(labels)
         assert len(self.file_paths) == len(self.labels), "Labels amount don't match with files amount"
 
-        self.segments_per_track = int(int(os.environ.get('TOTAL_DURATION')) / int(os.environ.get('SEGMENT_DURATION')))
+        self.segments_per_track = int(self.TOTAL_DURATION / cfg.SEGMENT_DURATION)
 
-        self.kind_of_spectrogram = os.environ.get('KIND_OF_SPECTROGRAM')
+        self.kind_of_spectrogram = cfg.KIND_OF_SPECTROGRAM
         self.num_freq_bins = None
 
         if self.kind_of_spectrogram != "MEL":
@@ -52,9 +60,9 @@ class AudioDataset(Dataset):
                     sample_rate=self.SAMPLE_RATE,
                     n_fft=self.N_FFT,
                     hop_length=self.HOP_LENGTH,
-                    n_mels=self.NUM_MELS
+                    n_mels=cfg.NUM_MELS
                 )(waveform)
-                self.num_freq_bins = self.NUM_MELS
+                self.num_freq_bins = cfg.NUM_MELS
                 return torchaudio.transforms.AmplitudeToDB()(spec)
             self.spec_transform = mel
             
@@ -79,30 +87,40 @@ class AudioDataset(Dataset):
             filepath = self.file_paths[file_index]
             genre_idx = self.labels[file_index]
 
-            waveform, sr = torchaudio.load(filepath)
+            y, sr = librosa.load(filepath, sr=self.SAMPLE_RATE)
 
-            if sr > self.SAMPLE_RATE:
-                resampler = torchaudio.transforms.Resample(orig_freq=sr, new_freq=self.SAMPLE_RATE)
-                waveform = resampler(waveform)
-                sr = self.SAMPLE_RATE
-            elif sr < self.SAMPLE_RATE:
+            if sr < self.SAMPLE_RATE:
                 raise ValueError(f"{filepath} descartado por sample rate bajo: {sr}")
 
-            waveform = waveform.mean(dim=0, keepdim=True)
+            y = librosa.to_mono(y)
             pad_len = (self.N_FFT - self.HOP_LENGTH) // 2
-            waveform = F.pad(waveform, (pad_len, pad_len), mode='reflect')
+            y = np.pad(y, pad_width=(pad_len, pad_len), mode='reflect')
 
             start = segment_index * segment_samples
             end = start + segment_samples
-            waveform_segment = waveform[:, start:end]
-            waveform_segment = F.pad(waveform_segment, (pad_len, pad_len), mode='reflect')
+            y_segment = y[start:end]
+            y_segment = np.pad(y_segment, pad_width=(pad_len, pad_len), mode='reflect')
 
-            if waveform_segment.size(1) < segment_samples:
-                waveform_segment = F.pad(waveform_segment, (0, segment_samples - waveform_segment.size(1)))
+            if y_segment.shape[0] < segment_samples:
+                y_segment = np.pad(y_segment, pad_width=(0, segment_samples - y_segment.shape[0]))
 
             self.SPEC_TIME_STEPS = int((segment_samples + 2 * pad_len) / self.HOP_LENGTH) + 1
 
-            segment_spec = self.spec_transform(waveform_segment)
+            if self.kind_of_spectrogram == "STFT":
+                D = librosa.stft(y_segment, n_fft=self.N_FFT, hop_length=self.HOP_LENGTH)
+                S = np.abs(D)
+                S_db = librosa.amplitude_to_db(S, ref=np.max)
+            else:
+                S = librosa.feature.melspectrogram(
+                    y=y_segment,
+                    sr=self.SAMPLE_RATE,
+                    n_fft=self.N_FFT,
+                    hop_length=self.HOP_LENGTH,
+                    n_mels=cfg.NUM_MELS
+                )
+                S_db = librosa.amplitude_to_db(S, ref=np.max)
+
+            segment_spec = torch.tensor(S_db).unsqueeze(0).float()
             spec_mean = segment_spec.mean()
             spec_std = segment_spec.std()
 
@@ -111,17 +129,14 @@ class AudioDataset(Dataset):
             else:
                 segment_spec = (segment_spec - spec_mean) / spec_std
 
-            # Cut/padding time axis
             if segment_spec.shape[-1] < self.SPEC_TIME_STEPS:
                 pad_amount = self.SPEC_TIME_STEPS - segment_spec.shape[-1]
-                segment_spec = F.pad(segment_spec, (0, pad_amount))
+                segment_spec = torch.nn.functional.pad(segment_spec, (0, pad_amount))
             else:
                 segment_spec = segment_spec[..., :self.SPEC_TIME_STEPS]
 
-            # To adapt frequences' dimensions in order to force compatibility with MEL
-            if self.kind_of_spectrogram == "STFT" and self.num_freq_bins != self.NUM_MELS:
-                segment_spec = F.interpolate(segment_spec.unsqueeze(0), size=(self.NUM_MELS, self.SPEC_TIME_STEPS), mode="bilinear", align_corners=False).squeeze(0)
-
+            # print(f'''audio_dataset spectrogram output shape {segment_spec.shape}''')
+            # Si el espectrograma es STFT, se usa el número real de bins; no se fuerza a NUM_MELS
             return segment_spec, genre_idx.clone().detach().to(torch.long)
 
         except Exception as e:

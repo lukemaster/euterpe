@@ -8,7 +8,9 @@ import pandas as pd
 import torch
 from torch.utils.data import DataLoader, Dataset
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+from training.config import Config
+
+cfg = Config()
 
 class ValidatorDataset(Dataset):
     def __init__(self,valid_files_csv_path, desired_duration):
@@ -22,7 +24,7 @@ class ValidatorDataset(Dataset):
         
         if not os.path.exists(self.valid_files_csv_path): # Preprocessing valid files csv
 
-            dataloader = DataLoader(self, 1, shuffle=False, num_workers=0, pin_memory=True, pin_memory_device='cuda')
+            dataloader = DataLoader(self, 1, shuffle=False, num_workers=0, pin_memory=True, pin_memory_device=cfg.device)
         
             fieldnames = ['filepath', 'label', 'duration']
             with open(self.valid_files_csv_path, mode='w', newline='') as csvfile:

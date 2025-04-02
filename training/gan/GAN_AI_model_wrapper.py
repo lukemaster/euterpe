@@ -6,16 +6,16 @@ import torch.nn.functional as F
 
 import pandas as pd
 
-from dotenv import load_dotenv
 from training.AI_model import AIModel
-load_dotenv('./VIU/09MIAR/euterpe/.env')
+from training.config import Config
 
+cfg = Config()
 
 class GANAIModelWrapper(AIModel):
-    LATENT_DIM = int(os.environ["LATENT_DIM"])
-    SAMPLE_RATE = int(os.environ["SAMPLE_RATE"])
-    HOP_LENGTH = int(os.environ["HOP_LENGTH"])
-    SPEC_TIME_STEPS = int((SAMPLE_RATE * int(os.environ.get('SEGMENT_DURATION'))) / HOP_LENGTH)
+    LATENT_DIM = cfg.LATENT_DIM
+    SAMPLE_RATE = cfg.SAMPLE_RATE
+    HOP_LENGTH = cfg.HOP_LENGTH
+    SPEC_TIME_STEPS = cfg.SPEC_TIME_STEPS
     
     def __init__(self, model):
         super().__init__()

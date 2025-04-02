@@ -14,19 +14,19 @@ import pytorch_lightning as pl
 import pandas as pd
 import matplotlib.pyplot as plt
 
-from dotenv import load_dotenv
 from training.AI_model import AIModel
-load_dotenv('./VIU/09MIAR/euterpe/.env')
+from training.config import Config
+
+cfg = Config()
 
 class VAEAIModelWrapper(AIModel):
-    BETA_MAX = float(os.environ["BETA_MAX"])
-    BETA_WARMUP_EPOCHS = int(os.environ["BETA_WARMUP_EPOCHS"])
-    LATENT_DIM = int(os.environ["LATENT_DIM"])
-    SAMPLE_RATE = int(os.environ["SAMPLE_RATE"])
-    N_FFT = int(os.environ["N_FFT"])
-    HOP_LENGTH = int(os.environ["HOP_LENGTH"])
-    NUM_MELS = int(os.environ["NUM_MELS"])
-    SPEC_TIME_STEPS = int((SAMPLE_RATE * int(os.environ.get('SEGMENT_DURATION'))) / HOP_LENGTH)
+    BETA_MAX = cfg.BETA_MAX
+    BETA_WARMUP_EPOCHS = cfg.BETA_WARMUP_EPOCHS
+    LATENT_DIM = cfg.LATENT_DIM
+    SAMPLE_RATE = cfg.SAMPLE_RATE
+    N_FFT = cfg.N_FFT
+    HOP_LENGTH = cfg.HOP_LENGTH
+    SPEC_TIME_STEPS = cfg.SPEC_TIME_STEPS
     
     def __init__(self, model):
         super().__init__()
@@ -183,6 +183,7 @@ class VAEAIModelWrapper(AIModel):
                     "val_g_loss": float(np.mean(val_g_losses)),
                     "val_d_loss": float(np.mean(val_d_losses))
                 })
+    
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", patience=5, factor=0.5, verbose=True)

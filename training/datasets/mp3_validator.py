@@ -1,30 +1,26 @@
 ## KEEP IT IN A BLOCK ##
 import numpy as np
+
+from training.config import Config
 np.complex = complex  # Corrección temporal necesaria para librosa
 import librosa
 import librosa.display
 ########################
 
 import os
-import gc
 import torch
-import subprocess
 from mutagen.mp3 import MP3
 
 from .validator_dataset import ValidatorDataset
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-from dotenv import load_dotenv
-load_dotenv('./VIU/09MIAR/euterpe/.env')
+cfg = Config()
 
 class MP3ValidatorDataset(ValidatorDataset):
     def __init__(self, file_paths, labels, valid_files_csv_path, cut_duration):
         super().__init__(valid_files_csv_path, cut_duration)
-        self.SAMPLE_RATE = int(os.environ.get('SAMPLE_RATE'))
-        self.N_FFT = int(os.environ.get('N_FFT'))
-        self.HOP_LENGTH = int(os.environ.get('HOP_LENGTH'))
-        self.NUM_MELS = int(os.environ.get('NUM_MELS'))
+        self.SAMPLE_RATE = cfg.SAMPLE_RATE
+        self.N_FFT = cfg.N_FFT
+        self.HOP_LENGTH = cfg.HOP_LENGTH
         
         self.file_paths = file_paths
         self.labels = labels
@@ -81,7 +77,7 @@ class MP3ValidatorDataset(ValidatorDataset):
                 num_samples = int(sr * self.cut_duration)
                 waveform = waveform[:num_samples]
                 
-                mel_spectrogram = librosa.feature.melspectrogram(y=waveform, sr=sr, n_mels=self.NUM_MELS, hop_length=self.HOP_LENGTH)
+                mel_spectrogram = librosa.feature.melspectrogram(y=waveform, sr=sr, n_mels=cfg.NUM_MELS, hop_length=self.HOP_LENGTH)
                 mel_spectrogram = librosa.amplitude_to_db(mel_spectrogram, ref=np.max)
 
                 if len(mel_spectrogram.shape) == 0:
@@ -97,7 +93,7 @@ class MP3ValidatorDataset(ValidatorDataset):
                     mel_spectrogram = np.squeeze(mel_spectrogram)
                     # print(f'Fixed shape: {mel_spectrogram.shape}')
 
-                if mel_spectrogram.shape != (self.NUM_MELS, mel_spectrogram.shape[1]):
+                if mel_spectrogram.shape != (cfg.NUM_MELS, mel_spectrogram.shape[1]):
                     # print(f'Error: unexpected final shape {mel_spectrogram.shape}.')
                     return self.jump_next_file(idx)
 
