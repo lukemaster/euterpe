@@ -1,3 +1,22 @@
+# Copyright (C) 2025 Rafael Luque Tejada
+# Author: Rafael Luque Tejada <lukemaster.master@gmail.com>
+#
+# This file is part of Generación de Música Personalizada a través de Modelos Generativos Adversariales.
+#
+# Euterpe as a part of the project Generación de Música Personalizada a través de Modelos Generativos Adversariales is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# Generación de Música Personalizada a través de Modelos Generativos Adversariales is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+
 from torch.utils.data import random_split, DataLoader
 import pytorch_lightning as pl
 
@@ -24,7 +43,7 @@ class VAEDataModule(pl.LightningDataModule):
             return
 
         if self.dataset_cls is None:
-            raise ValueError("Debe proporcionar 'dataset_cls' si no pasa ningún dataset ya instanciado.")
+            raise ValueError("It's necessary to provide 'dataset_cls' or an initializced dataset.")
 
         full_dataset = self.dataset_cls(**self.dataset_kwargs)
         train_size = int((1 - self.val_split) * len(full_dataset))

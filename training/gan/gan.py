@@ -1,5 +1,20 @@
-import os
-import math
+# Copyright (C) 2025 Rafael Luque Tejada
+# Author: Rafael Luque Tejada <lukemaster.master@gmail.com>
+#
+# This file is part of Generación de Música Personalizada a través de Modelos Generativos Adversariales.
+#
+# Euterpe as a part of the project Generación de Música Personalizada a través de Modelos Generativos Adversariales is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# Generación de Música Personalizada a través de Modelos Generativos Adversariales is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import torch
 import torch.nn as nn
@@ -11,104 +26,110 @@ from training.config import Config
 
 cfg = Config()
 
-
 class GAN(nn.Module):
-    NUM_GENRES = cfg.NUM_GENRES
-    GENRE_EMBEDDING_DIM = (2 ** math.ceil(math.log2(NUM_GENRES)))# * 2 maybe an improvement or not
-
     class GAN_Generator(nn.Module):
-
-        def __init__(self, gan):
+        def __init__(self):
             super().__init__()
-            self.NUM_GENRES = gan.NUM_GENRES
-            self.LATENT_DIM = gan.LATENT_DIM
-            self.GENRE_EMBEDDING_DIM = gan.GENRE_EMBEDDING_DIM
-            self.SPEC_TIME_STEPS = gan.SPEC_TIME_STEPS
-            self.GEN_MODEL_DIM = cfg.GEN_MODEL_DIM
-            self.GEN_NUM_LAYERS = cfg.GEN_NUM_LAYERS
-            self.GEN_NUM_HEADS = cfg.GEN_NUM_HEADS
+            self.latent_channels, self.h, self.w = (
+                cfg.LATENT_CHANNELS,
+                cfg.SPEC_ROWS // (2 ** (len(cfg.CNN) - 1)),
+                cfg.SPEC_COLS // (2 ** (len(cfg.CNN) - 1))
+            )
+            self.seq_len = self.w
+            self.token_dim = self.latent_channels * self.h
 
-            self.genre_embedding = nn.Embedding(self.NUM_GENRES, self.GENRE_EMBEDDING_DIM)
-            self.input_dim = self.LATENT_DIM + self.GENRE_EMBEDDING_DIM
-            self.linear_in = nn.Linear(self.input_dim, self.SPEC_TIME_STEPS * self.GEN_MODEL_DIM)
+            self.genre_embedding = nn.Embedding(cfg.NUM_GENRES, cfg.GENRE_EMBED_DIM)
 
             encoder_layer = nn.TransformerEncoderLayer(
-                d_model=self.GEN_MODEL_DIM,
-                nhead=self.GEN_NUM_HEADS,
-                dim_feedforward=512,
+                d_model=self.token_dim + cfg.GENRE_EMBED_DIM,
+                nhead=cfg.GEN_NUM_HEADS,
+                dim_feedforward=cfg.GEN_MODEL_DIM * 2,
                 dropout=0.1,
                 batch_first=True
             )
-            self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=self.GEN_NUM_LAYERS)
+            self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=cfg.GEN_NUM_LAYERS)
 
-            self.to_mel = nn.Sequential(
-                nn.Conv1d(self.GEN_MODEL_DIM, self.GEN_MODEL_DIM // 2, kernel_size=3, padding=1),
-                nn.ReLU(),
-                nn.Conv1d(self.GEN_MODEL_DIM // 2, cfg.NUM_MELS, kernel_size=3, padding=1),
+            self.fc_out = nn.Linear(self.token_dim + cfg.GENRE_EMBED_DIM, self.token_dim)
+
+            self.deconv = nn.Sequential(
+                nn.ConvTranspose2d(self.latent_channels, cfg.CNN[-1],
+                                kernel_size=cfg.CNN_KERNEL,
+                                stride=cfg.CNN_STRIDE,
+                                padding=cfg.CNN_PADDING),
+                nn.LeakyReLU(0.2),
+                nn.ConvTranspose2d(cfg.CNN[-1], cfg.CNN[-2],
+                                kernel_size=cfg.CNN_KERNEL,
+                                stride=cfg.CNN_STRIDE,
+                                padding=cfg.CNN_PADDING),
+                nn.LeakyReLU(0.2),
+                nn.ConvTranspose2d(cfg.CNN[-2], cfg.CNN[0],
+                                kernel_size=cfg.CNN_KERNEL,
+                                stride=cfg.CNN_STRIDE,
+                                padding=cfg.CNN_PADDING,
+                                output_padding=(0, 1)),
                 nn.Tanh()
             )
 
-        def forward(self, z: torch.Tensor, genre: torch.Tensor) -> torch.Tensor:
-            genre_emb = self.genre_embedding(genre)
-            x = torch.cat([z, genre_emb], dim=1)
+        def forward(self, z, genre):
+            B = z.size(0)
 
-            x = self.linear_in(x)
-            x = x.view(x.size(0), self.SPEC_TIME_STEPS, self.GEN_MODEL_DIM)
-            x = self.transformer(x)
-            x = x.permute(0, 2, 1)
-            x = self.to_mel(x)
-            x = x.unsqueeze(1)
-            return x[..., :self.SPEC_TIME_STEPS]
+            z_seq = z.view(B, self.token_dim, self.seq_len).permute(0, 2, 1)
+
+            genre_emb = self.genre_embedding(genre).unsqueeze(1)
+            genre_seq = genre_emb.expand(-1, self.seq_len, -1)
+
+            z_input = torch.cat([z_seq, genre_seq], dim=-1)
+
+            x = self.transformer(z_input)
+            x = self.fc_out(x)
+
+            volume = x.permute(0, 2, 1).view(B, self.latent_channels, self.h, self.w)
+
+            recon = self.deconv(volume)
+            return recon
 
     class GAN_Discriminator(nn.Module):
-        def __init__(self, gan):
+        def __init__(self):
             super().__init__()
 
-            self.NUM_GENRES = gan.NUM_GENRES
-            self.GENRE_EMBEDDING_DIM = gan.GENRE_EMBEDDING_DIM
+            self.genre_embedding = nn.Embedding(cfg.NUM_GENRES, cfg.GENRE_EMBED_DIM)
 
-            self.genre_embedding = nn.Embedding(self.NUM_GENRES, self.GENRE_EMBEDDING_DIM)
+            self.conv1 = nn.Conv2d(1 + cfg.GENRE_EMBED_DIM, 64, kernel_size=cfg.CNN_KERNEL, padding=cfg.CNN_PADDING)
+            self.bn1 = nn.BatchNorm2d(64)
 
-            self.conv1 = nn.Conv2d(1 + self.GENRE_EMBEDDING_DIM, 32, kernel_size=3, padding=1)
-            self.bn1 = nn.BatchNorm2d(32)
+            self.conv2 = nn.Conv2d(64, 128, kernel_size=cfg.CNN_KERNEL, padding=cfg.CNN_PADDING)
+            self.bn2 = nn.BatchNorm2d(128)
 
-            self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
-            self.bn2 = nn.BatchNorm2d(64)
-
-            self.conv3 = nn.Conv2d(64, 128, kernel_size=3, padding=1)
-            self.bn3 = nn.BatchNorm2d(128)
+            self.conv3 = nn.Conv2d(128, 256, kernel_size=cfg.CNN_KERNEL, padding=cfg.CNN_PADDING)
+            self.bn3 = nn.BatchNorm2d(256)
 
             self.pool = nn.MaxPool2d(kernel_size=2)
-
-            self.flatten_shapes = {}
-            self.final_dim = None
-            self.fc = None
+            self.flatten = nn.Flatten()
+            
+            self._classifier = None
+            self._last_shape = None
 
         def forward(self, x: torch.Tensor, genre: torch.Tensor) -> torch.Tensor:
-            genre_emb = self.genre_embedding(genre).view(genre.size(0), self.GENRE_EMBEDDING_DIM, 1, 1)
+            genre_emb = self.genre_embedding(genre).view(genre.size(0), cfg.GENRE_EMBED_DIM, 1, 1)
             genre_emb = genre_emb.expand(-1, -1, x.size(2), x.size(3))
+
             x = torch.cat([x, genre_emb], dim=1)
 
             x = self.pool(F.relu(self.bn1(self.conv1(x))))
             x = self.pool(F.relu(self.bn2(self.conv2(x))))
             x = self.pool(F.relu(self.bn3(self.conv3(x))))
 
-            x = x.view(x.size(0), -1)
+            x = self.flatten(x)
 
-            if self.fc is None or self.final_dim != x.size(1):
-                self.final_dim = x.size(1)
-                self.fc = nn.Linear(self.final_dim, 1).to(x.device)
+            if self._classifier is None or x.shape[1] != self._last_shape:
+                self._last_shape = x.shape[1]
+                self._classifier = nn.Linear(x.shape[1], 1).to(x.device)
 
-            return self.fc(x)
+            return self._classifier(x)
 
     class PretrainingGAN(pl.LightningModule):
-        def __init__(self, gan):
+        def __init__(self,gan):
             super().__init__()
-            self.GAN_PRETRAIN_EPOCHS_G = cfg.GAN_PRETRAIN_EPOCHS_G
-            self.GAN_PRETRAIN_EPOCHS_D = cfg.GAN_PRETRAIN_EPOCHS_D
-            self.LATENT_DIM = gan.LATENT_DIM
-            self.SPEC_TIME_STEPS = gan.SPEC_TIME_STEPS
-
             self.generator = gan.generator
             self.discriminator = gan.discriminator
             self.automatic_optimization = False
@@ -119,19 +140,25 @@ class GAN(nn.Module):
 
             opt_g, opt_d = self.optimizers()
 
-            # Preentrenamiento del generador
-            if self.current_epoch < self.GAN_PRETRAIN_EPOCHS_G:
-                z = torch.randn(batch_size, self.LATENT_DIM, device=self.device)
+            # Generator pretraining
+            if self.current_epoch < cfg.GAN_PRETRAIN_EPOCHS_G:
+                z = torch.randn(
+                    batch_size,
+                    cfg.LATENT_CHANNELS,
+                    cfg.SPEC_ROWS // (2 ** (len(cfg.CNN) - 1)),
+                    cfg.SPEC_COLS // (2 ** (len(cfg.CNN) - 1)),
+                    device=self.device
+                )
                 gen_specs = self.generator(z, genres)
-                real_specs = real_specs[..., :self.SPEC_TIME_STEPS]  # Recorte forzado
+                real_specs = real_specs[..., :cfg.SPEC_TIME_STEPS]
                 g_loss = F.mse_loss(gen_specs, real_specs)
                 opt_g.zero_grad()
                 self.manual_backward(g_loss)
                 opt_g.step()
                 self.log("pretrain_g_loss", g_loss, prog_bar=True)
 
-            # Preentrenamiento del discriminador
-            if self.current_epoch < self.GAN_PRETRAIN_EPOCHS_D:
+            # Discriminator pretraining
+            if self.current_epoch < cfg.GAN_PRETRAIN_EPOCHS_D:
                 valid = torch.ones(batch_size, 1, device=self.device)
                 preds = self.discriminator(real_specs, genres)
                 d_loss = F.binary_cross_entropy_with_logits(preds, valid)
@@ -152,11 +179,11 @@ class GAN(nn.Module):
 
     def __init__(self):
         super().__init__()
-        self.LATENT_DIM = cfg.LATENT_DIM
-        self.SPEC_TIME_STEPS = cfg.SPEC_TIME_STEPS
+        cfg.LATENT_DIM = cfg.LATENT_DIM
+        cfg.SPEC_TIME_STEPS = cfg.SPEC_TIME_STEPS
         self.automatic_optimization = False
-        self.generator = self.GAN_Generator(self)
-        self.discriminator = self.GAN_Discriminator(self)
+        self.generator = self.GAN_Generator()
+        self.discriminator = self.GAN_Discriminator()
         self.pretrainModule = self.PretrainingGAN(self)
 
     def forward(self, z, genre):

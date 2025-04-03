@@ -1,3 +1,21 @@
+# Copyright (C) 2025 Rafael Luque Tejada
+# Author: Rafael Luque Tejada <lukemaster.master@gmail.com>
+#
+# This file is part of Generación de Música Personalizada a través de Modelos Generativos Adversariales.
+#
+# Euterpe as a part of the project Generación de Música Personalizada a través de Modelos Generativos Adversariales is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# Generación de Música Personalizada a través de Modelos Generativos Adversariales is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 ## KEEP IT IN A BLOCK ##
 import numpy as np
 
@@ -5,7 +23,6 @@ from training.config import Config
 np.complex = complex  # Corrección temporal necesaria para librosa
 ########################
 
-import os
 import argparse
 
 import torch
@@ -38,9 +55,9 @@ def get_dataloader(datasets_path, valid_files_csv_path):# TODO: integration insi
 
     file_paths = fma_dataset.get_file_paths()
     labels = fma_dataset.get_labels()
-    mp3Validator = MP3ValidatorDataset(file_paths,labels,valid_files_csv_path,cfg.TOTAL_DURATION) #TODO: params
+    mp3_validator = MP3ValidatorDataset(file_paths,labels,valid_files_csv_path,cfg.TOTAL_DURATION) #TODO: params
      
-    _, dict_dataset = fma_dataset.balanced(mp3Validator.getValidFiles() ,cfg.LIMIT_FILES)
+    _, dict_dataset = fma_dataset.balanced(mp3_validator.getValidFiles() ,cfg.LIMIT_FILES)
 
     file_paths = list(dict_dataset.keys())
     labels = [dict_dataset[fp]['label'] for fp in file_paths]
@@ -76,8 +93,6 @@ def train_gan(datasets_path, valid_files_csv_path):
         max_epochs=cfg.TRAIN_EPOCHS,
         accelerator='auto',
         log_every_n_steps=1,
-        accumulate_grad_batches=2,
-        precision=16,
         enable_progress_bar=True
     )
     trainer.fit(model, datamodule=data_module)
@@ -94,8 +109,6 @@ def train_vae(datasets_path, valid_files_csv_path):
         max_epochs=cfg.TRAIN_EPOCHS,
         accelerator='auto',
         log_every_n_steps=1,
-        accumulate_grad_batches=2,
-        precision=16,
         enable_progress_bar=True
     )
     trainer.fit(model, datamodule=data_module)
@@ -107,7 +120,6 @@ def generate_audio_vae(model_path, genre_id):
     checkpoint = torch.load(model_path, map_location="cuda")
     model.load_state_dict(checkpoint["model"], strict=False)
 
-    # model.load_state_dict(torch.load(model_path, map_location="cuda"))
     model.to("cuda")
     model.eval()
 
@@ -115,10 +127,10 @@ def generate_audio_vae(model_path, genre_id):
     model.generate_audio_from_noise(genre_id, output_path=f'''sample_genre{genre_id}.wav''')
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Ejemplo de llamada: python main.py datasets_path valid_files_csv_path')
-    parser.add_argument('datasets_path', type=str, help='localización del dataset')
-    parser.add_argument('valid_files_csv_path', type=str, help='localización del csv de ficheros válidos del dataset')
-    parser.add_argument('model_to_train', type=str, help='modelo a entrenar: vae o gan')
+    parser = argparse.ArgumentParser(description='Example usage: python main.py datasets_path valid_files_csv_path model_to_train')
+    parser.add_argument('datasets_path', type=str, help='location of the dataset')
+    parser.add_argument('valid_files_csv_path', type=str, help='location of the CSV file with valid dataset entries')
+    parser.add_argument('model_to_train', type=str, help='model to train: vae or gan')
 
     args = parser.parse_args()
     model_to_train = args.model_to_train

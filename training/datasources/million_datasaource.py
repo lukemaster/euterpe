@@ -16,11 +16,15 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-
 import os
-import json
 import pandas as pd
 from .datasource import Datasource
+
+############# MILLION #############
+DATASET_MILLION_PATH = os.path.join(/home/luke/VIU/09MIAR/datasets','million/archive/MP3-Example')
+genres = os.listdir(DATASET_MILLION_PATH)
+# print(genres)
+#************ MILLION *************
 
 class FMADatasource(Datasource):
 
@@ -49,6 +53,13 @@ class FMADatasource(Datasource):
         self.genres_id['track_id'] = self.genres_id['track_id'].fillna(-1).astype(int).astype(str).str.zfill(6)
         self.genres_id['folder'] = self.genres_id['track_id'].apply(lambda x: x[0:3])
         self.genres_id = self.genres_id.apply(lambda x: self.check_file_in_folder(x), axis=1, )
+
+        # print(GENRE_TRANSLATOR)
+        # print(GENRE_ID_TRANSLATOR)
+        # print(GENRE_TRANSLATOR[GENRE_ID_TRANSLATOR['fma'][21]]['system'])
+        # print(GENRE_TRANSLATOR[GENRE_ID_TRANSLATOR['fma'][4]]['system'])
+
+
         self.genres_id = self.genres_id.dropna(subset=['genre_id'])
         self.genres_id = self.genres_id.reset_index(drop=True)
 

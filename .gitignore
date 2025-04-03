@@ -2,6 +2,10 @@
 
 __pycache__
 
+# local launcher
+train/gan_executor.ipynb
+train/vae_executor.ipynb
+
 # local config
 .env
 

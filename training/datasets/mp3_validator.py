@@ -1,3 +1,22 @@
+# Copyright (C) 2025 Rafael Luque Tejada
+# Author: Rafael Luque Tejada <lukemaster.master@gmail.com>
+#
+# This file is part of Generación de Música Personalizada a través de Modelos Generativos Adversariales.
+#
+# Euterpe as a part of the project Generación de Música Personalizada a través de Modelos Generativos Adversariales is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# Generación de Música Personalizada a través de Modelos Generativos Adversariales is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+
 ## KEEP IT IN A BLOCK ##
 import numpy as np
 
@@ -31,7 +50,7 @@ class MP3ValidatorDataset(ValidatorDataset):
         # filter invalid files
         print('Creating valid_files')
         self.valid_files = [fp for fp in self.file_paths if self.is_valid_file(fp)]
-        print('done valid_files')
+        print('Done valid_files')
 
     def __len__(self):
         return len(self.valid_files)
@@ -55,7 +74,6 @@ class MP3ValidatorDataset(ValidatorDataset):
     def __getitem__(self, idx):
         if idx < self.__len__():
             file_path = self.valid_files[idx]
-            # print(f'''count {self.counter} validating {file_path}''',end='\r')
             self.counter +=1
             
             try:
@@ -111,7 +129,7 @@ class MP3ValidatorDataset(ValidatorDataset):
                 return True, label, file_path, duration#, hop_length, sample_rate
 
             except Exception as e:
-                # print(f'Error procesando {file_path}: {e}')
+                # print(f'Error processing {file_path}: {e}')
                 # import traceback
                 # traceback.print_exc()
                 return self.jump_next_file(idx)

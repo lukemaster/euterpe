@@ -1,15 +1,27 @@
+# Copyright (C) 2025 Rafael Luque Tejada
+# Author: Rafael Luque Tejada <lukemaster.master@gmail.com>
+#
+# This file is part of Generación de Música Personalizada a través de Modelos Generativos Adversariales.
+#
+# Euterpe as a part of the project Generación de Música Personalizada a través de Modelos Generativos Adversariales is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# Generación de Música Personalizada a través de Modelos Generativos Adversariales is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 import os
-import json
-import math
 import numpy as np
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 
-import torchaudio
-
-import pytorch_lightning as pl
 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -20,14 +32,6 @@ from training.config import Config
 cfg = Config()
 
 class VAEAIModelWrapper(AIModel):
-    BETA_MAX = cfg.BETA_MAX
-    BETA_WARMUP_EPOCHS = cfg.BETA_WARMUP_EPOCHS
-    LATENT_DIM = cfg.LATENT_DIM
-    SAMPLE_RATE = cfg.SAMPLE_RATE
-    N_FFT = cfg.N_FFT
-    HOP_LENGTH = cfg.HOP_LENGTH
-    SPEC_TIME_STEPS = cfg.SPEC_TIME_STEPS
-    
     def __init__(self, model):
         super().__init__()
         self.model = model
@@ -39,9 +43,10 @@ class VAEAIModelWrapper(AIModel):
         os.makedirs("checkpoints", exist_ok=True)
     
     def forward(self, x, genre):
-        x = x[..., :self.SPEC_TIME_STEPS]
+        x = x[..., :cfg.SPEC_TIME_STEPS]
+
         x_hat, mu, logvar = self.model(x, genre)
-        x_hat = x_hat[..., :self.SPEC_TIME_STEPS]
+        x_hat = x_hat[..., :cfg.SPEC_TIME_STEPS]
         if x_hat.shape[-1] != x.shape[-1]:
             min_width = min(x_hat.shape[-1], x.shape[-1])
             x = x[..., :min_width]
@@ -49,15 +54,26 @@ class VAEAIModelWrapper(AIModel):
         return x_hat, x, mu, logvar
 
     def compute_loss(self, x_hat, x, mu, logvar):
-        warmup = max(self.BETA_WARMUP_EPOCHS, 1)
-        step = self.current_epoch / warmup
-        beta = float(self.BETA_MAX / (1 + math.exp(-10 * (step - 0.5))))
-        beta = min(beta, self.BETA_MAX)
+        # warmup = max(cfg.BETA_WARMUP_EPOCHS, 1)
+        # step = self.current_epoch / warmup
+        # beta = float(cfg.BETA_MAX / (1 + math.exp(-10 * (step - 0.5))))
+        ##
+        # step = self.global_step / self.total_steps
+        # beta = float(cfg.BETA_MAX / (1 + math.exp(-10 * (step - 0.5))))
+        ##
+        # beta = min(beta, cfg.BETA_MAX)
+        if self.global_step < self.total_steps * 0.3:
+            beta = cfg.BETA_MAX * self.global_step / (self.total_steps * 0.3)
+        else:
+            beta = cfg.BETA_MAX
+        ##
+        # beta = 1
+        
 
         recon_loss = F.mse_loss(x_hat, x, reduction='mean')
         kl_div = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp()) / x.size(0)
         loss = recon_loss + beta * kl_div
-        return loss, recon_loss, kl_div, beta
+        return loss, recon_loss, kl_div, 1
 
     def training_step(self, batch, batch_idx):
         x, genre = batch
@@ -71,6 +87,65 @@ class VAEAIModelWrapper(AIModel):
             self.update_genre_limits(genre[i].item(), x[i])
 
         loss, recon_loss, kl_div, beta = self.compute_loss(x_hat, x, mu, logvar)
+        
+        global_step = self.global_step
+
+        if global_step % 500 == 0:
+            print(f"[DEBUG] KL={kl_div:.4f} | Recon Loss={recon_loss:.4f} | mu mean={mu.mean().item():.4f} std={mu.std().item():.4f}")
+
+            base_dir = "training_debug"
+            recon_dir = os.path.join(base_dir, "reconstructions")
+            mu_hist_dir = os.path.join(base_dir, "mu_histograms")
+            logvar_hist_dir = os.path.join(base_dir, "logvar_histograms")
+
+            os.makedirs(recon_dir, exist_ok=True)
+            os.makedirs(mu_hist_dir, exist_ok=True)
+            os.makedirs(logvar_hist_dir, exist_ok=True)
+
+            spec_real = self.generate_spectrogram(x[0, 0])
+            spec_recon = self.generate_spectrogram(x_hat[0, 0])
+
+            spec_real = (spec_real + 1) / 2 * (cfg.DB_MAX - cfg.DB_MIN) + cfg.DB_MIN
+            spec_recon = (spec_recon + 1) / 2 * (cfg.DB_MAX - cfg.DB_MIN) + cfg.DB_MIN
+
+            _, axs = plt.subplots(1, 2, figsize=(10, 4))
+            axs[0].imshow(spec_real, aspect='auto', origin='lower', cmap='magma')
+            axs[0].set_title('Original')
+            axs[1].imshow(spec_recon, aspect='auto', origin='lower', cmap='magma')
+            axs[1].set_title('Reconstructed')
+            for ax in axs:
+                ax.set_xlabel('Time')
+                ax.set_ylabel('Frequence')
+            plt.tight_layout()
+
+            fname = os.path.join(recon_dir, f"recon_step_{global_step}.jpg")
+            plt.savefig(fname)
+            plt.close()
+            print(f"[DEBUG] Reconstruction saved in {fname}")
+
+            mu_np = mu.detach().cpu().numpy().flatten()
+            plt.figure(figsize=(6, 4))
+            plt.hist(mu_np, bins=100, color="skyblue", edgecolor="black")
+            plt.title(f"mu Histogram - step {global_step}")
+            plt.xlabel("Value")
+            plt.ylabel("Frequence")
+            plt.tight_layout()
+            mu_fname = os.path.join(mu_hist_dir, f"mu_hist_step_{global_step}.png")
+            plt.savefig(mu_fname)
+            plt.close()
+            print(f"[DEBUG] mu histogram saved in {mu_fname}")
+
+            logvar_np = logvar.detach().cpu().numpy().flatten()
+            plt.figure(figsize=(6, 4))
+            plt.hist(logvar_np, bins=100, color="salmon", edgecolor="black")
+            plt.title(f"logvar histogram - step {global_step}")
+            plt.xlabel("Value")
+            plt.ylabel("Frequence")
+            plt.tight_layout()
+            logvar_fname = os.path.join(logvar_hist_dir, f"logvar_hist_step_{global_step}.png")
+            plt.savefig(logvar_fname)
+            plt.close()
+            print(f"[DEBUG] logvar  histogram saved in {logvar_fname}")
 
         self.log("loss", loss, prog_bar=True)
         self.log("recon_loss", recon_loss, prog_bar=True)
@@ -114,7 +189,7 @@ class VAEAIModelWrapper(AIModel):
             self.std_x = std_x.item()
             self.log("x_mean_epoch", mean_x, prog_bar=True)
             self.log("x_std_epoch", std_x, prog_bar=True)
-            print(f"[INFO] Época {self.current_epoch} completada — mean_x={self.mean_x:.4f}, std_x={self.std_x:.4f}")
+            print(f"[INFO] Epoc {self.current_epoch} completed — mean_x={self.mean_x:.4f}, std_x={self.std_x:.4f}")
             self.mean_x_buffer.copy_(mean_x)
             self.std_x_buffer.copy_(std_x)
 
@@ -157,7 +232,7 @@ class VAEAIModelWrapper(AIModel):
             plt.xlabel("Epoch")
             plt.ylabel("Valor")
             plt.legend()
-            plt.title("Media y desviación estándar de x")
+            plt.title("x mean and std")
             plt.savefig(f"logs/img/stats_epoch_{self.current_epoch}.jpg")
             plt.close()
 
@@ -169,7 +244,7 @@ class VAEAIModelWrapper(AIModel):
                 self.best_val_loss = current_val_loss
                 torch.save({"model": self.state_dict(), "extra": extra}, "checkpoints/vae_best.pt")
                 torch.save(self.state_dict(), f"checkpoints/vae_best.pt")
-                print(f"[INFO] Nuevo mejor modelo guardado (val_loss={current_val_loss:.4f})")
+                print(f"[INFO] New best model saved (val_loss={current_val_loss:.4f})")
 
         self.save_genre_limits()
 
@@ -185,8 +260,8 @@ class VAEAIModelWrapper(AIModel):
                 })
     
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", patience=5, factor=0.5, verbose=True)
+        optimizer = torch.optim.Adam(self.parameters(), lr=cfg.LEARNING_RATE)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", patience=cfg.LR_SCHEDULER_PATIENTE, factor=cfg.LR_SCHEDULER_FACTOR, verbose=True)
         return {
             "optimizer": optimizer,
             "lr_scheduler": {

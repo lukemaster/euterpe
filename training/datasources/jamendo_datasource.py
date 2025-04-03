@@ -16,19 +16,33 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-
 import os
-import json
 import pandas as pd
 from .datasource import Datasource
 
-class FMADatasource(Datasource):
+from training.config import Config
+
+cfg = Config()
+
+class JamendoDatasource(Datasource):
 
     def __init__(self, datasets_path):
-        super().__init__(datasets_path,'fma')
-        self.dataset_path = os.path.join(self.datasets_path,'fma','data')
-        self.metadata_path = os.path.join(self.dataset_path,'fma_metadata')
-        self.files_path = os.environ.get('FMA_PATH')
+        super().__init__(datasets_path,'jamendo')
+
+        def clean_jamendo_csv(row):
+            row['TAGS'] = row['TAGS'].split('genre---')[1]
+            return row[['TRACK_ID', 'PATH', 'TAGS']]
+
+        raw_30_df = pd.read_csv(os.path.join(cfg.JAMENDO_PATH,'raw_30s.tsv'), sep='\t', encoding='utf-8', on_bad_lines='skip')
+        raw_30_df = raw_30_df[raw_30_df['TAGS'].str.startswith('genre---')]
+        
+        raw_30_df = raw_30_df.apply(lambda x: clean_jamendo_csv(x),axis=1)
+        print(raw_30_df)
+
+        self.dataset_path = os.path.join(self.datasets_path,'mtg-jamendo-dataset','data')
+        self.metadata_path = os.path.join(self.dataset_path,'jamendo_metadata')
+        self.files_path = cfg.JAMENDO_PATH
+        print(self.metadata_path)
 
         genres_df = pd.read_csv(os.path.join(self.metadata_path,'genres.csv'))
         genres_df = genres_df[['genre_id','title']]
@@ -49,25 +63,9 @@ class FMADatasource(Datasource):
         self.genres_id['track_id'] = self.genres_id['track_id'].fillna(-1).astype(int).astype(str).str.zfill(6)
         self.genres_id['folder'] = self.genres_id['track_id'].apply(lambda x: x[0:3])
         self.genres_id = self.genres_id.apply(lambda x: self.check_file_in_folder(x), axis=1, )
+
         self.genres_id = self.genres_id.dropna(subset=['genre_id'])
         self.genres_id = self.genres_id.reset_index(drop=True)
 
         self.genres_id = self.filter_dataset_for_genres(self.genres_id,'fma')
         
-
-    def get_genre_map(self, row):
-        title = row['title'].lower() 
-        if title in self.GENRE_TITLE:
-            return (row['genre_id'],title)
-        
-    def extract_genre_id(sefl, x):
-        try:
-            return (x['track_id'],json.loads(x['track_genres'].replace("'", '"'))[0]['genre_id'],'','')
-        except:
-            return None
-
-    def check_file_in_folder(self, row):
-        folder = os.path.join(self.files_path,row['folder'])
-        track_path = f'''{os.path.join(folder,row['track_id'])}.mp3'''
-        row['file'] = track_path
-        return row

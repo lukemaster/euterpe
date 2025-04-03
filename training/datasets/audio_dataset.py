@@ -1,3 +1,22 @@
+# Copyright (C) 2025 Rafael Luque Tejada
+# Author: Rafael Luque Tejada <lukemaster.master@gmail.com>
+#
+# This file is part of Generación de Música Personalizada a través de Modelos Generativos Adversariales.
+#
+# Generación de Música Personalizada a través de Modelos Generativos Adversariales is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# Generación de Música Personalizada a través de Modelos Generativos Adversariales is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+
 ## KEEP IT IN A BLOCK ##
 # import numpy as np
 # np.complex = complex  # Corrección temporal necesaria para librosa
@@ -40,33 +59,16 @@ class AudioDataset(Dataset):
 
         self.segments_per_track = int(self.TOTAL_DURATION / cfg.SEGMENT_DURATION)
 
-        self.kind_of_spectrogram = cfg.KIND_OF_SPECTROGRAM
         self.num_freq_bins = None
 
-        if self.kind_of_spectrogram != "MEL":
-            def stft(waveform):
-                spec = torchaudio.transforms.Spectrogram(
-                    n_fft=self.N_FFT,
-                    hop_length=self.HOP_LENGTH,
-                    power=2.0
-                )(waveform)
-                self.num_freq_bins = self.N_FFT // 2 + 1
-                return torchaudio.transforms.AmplitudeToDB()(spec)
-            self.spec_transform = stft
-            
-        else:
-            def mel(waveform):
-                spec = torchaudio.transforms.MelSpectrogram(
-                    sample_rate=self.SAMPLE_RATE,
-                    n_fft=self.N_FFT,
-                    hop_length=self.HOP_LENGTH,
-                    n_mels=cfg.NUM_MELS
-                )(waveform)
-                self.num_freq_bins = cfg.NUM_MELS
-                return torchaudio.transforms.AmplitudeToDB()(spec)
-            self.spec_transform = mel
-            
-
+    def spec_transform(self, waveform):
+        spec = torchaudio.transforms.Spectrogram(
+            n_fft=self.N_FFT,
+            hop_length=self.HOP_LENGTH,
+            power=2.0
+        )(waveform)
+        self.num_freq_bins = self.N_FFT // 2 + 1
+        return torchaudio.transforms.AmplitudeToDB()(spec)
 
     def __len__(self):
         return len(self.file_paths) * self.segments_per_track
@@ -76,7 +78,6 @@ class AudioDataset(Dataset):
         del self.file_paths[index]
         return self.__getitem__((index + 1) % len(self.file_paths))
             
-
     def __getitem__(self, index):
         try:
             segment_samples = self.segment_samples
@@ -106,28 +107,16 @@ class AudioDataset(Dataset):
 
             self.SPEC_TIME_STEPS = int((segment_samples + 2 * pad_len) / self.HOP_LENGTH) + 1
 
-            if self.kind_of_spectrogram == "STFT":
-                D = librosa.stft(y_segment, n_fft=self.N_FFT, hop_length=self.HOP_LENGTH)
-                S = np.abs(D)
-                S_db = librosa.amplitude_to_db(S, ref=np.max)
-            else:
-                S = librosa.feature.melspectrogram(
-                    y=y_segment,
-                    sr=self.SAMPLE_RATE,
-                    n_fft=self.N_FFT,
-                    hop_length=self.HOP_LENGTH,
-                    n_mels=cfg.NUM_MELS
-                )
-                S_db = librosa.amplitude_to_db(S, ref=np.max)
+            D = librosa.stft(y_segment, n_fft=self.N_FFT, hop_length=self.HOP_LENGTH)
+            S = np.abs(D)
+            S_db = librosa.amplitude_to_db(S, ref=np.max)
+
+            S_db = np.clip(S_db, cfg.DB_MIN, cfg.DB_MAX)
 
             segment_spec = torch.tensor(S_db).unsqueeze(0).float()
-            spec_mean = segment_spec.mean()
-            spec_std = segment_spec.std()
-
-            if spec_std < 1e-5:
-                segment_spec = torch.zeros_like(segment_spec)
-            else:
-                segment_spec = (segment_spec - spec_mean) / spec_std
+            segment_spec = (segment_spec - cfg.DB_MIN) / (cfg.DB_MAX - cfg.DB_MIN)
+            
+            segment_spec = segment_spec * 2 - 1  # [-1, 1]
 
             if segment_spec.shape[-1] < self.SPEC_TIME_STEPS:
                 pad_amount = self.SPEC_TIME_STEPS - segment_spec.shape[-1]
@@ -135,8 +124,6 @@ class AudioDataset(Dataset):
             else:
                 segment_spec = segment_spec[..., :self.SPEC_TIME_STEPS]
 
-            # print(f'''audio_dataset spectrogram output shape {segment_spec.shape}''')
-            # Si el espectrograma es STFT, se usa el número real de bins; no se fuerza a NUM_MELS
             return segment_spec, genre_idx.clone().detach().to(torch.long)
 
         except Exception as e:

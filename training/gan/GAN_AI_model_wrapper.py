@@ -1,3 +1,22 @@
+
+# Copyright (C) 2025 Rafael Luque Tejada
+# Author: Rafael Luque Tejada <lukemaster.master@gmail.com>
+#
+# This file is part of Generación de Música Personalizada a través de Modelos Generativos Adversariales.
+#
+# Euterpe as a part of the project Generación de Música Personalizada a través de Modelos Generativos Adversariales is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# Generación de Música Personalizada a través de Modelos Generativos Adversariales is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 import os
 import numpy as np
 
@@ -12,11 +31,6 @@ from training.config import Config
 cfg = Config()
 
 class GANAIModelWrapper(AIModel):
-    LATENT_DIM = cfg.LATENT_DIM
-    SAMPLE_RATE = cfg.SAMPLE_RATE
-    HOP_LENGTH = cfg.HOP_LENGTH
-    SPEC_TIME_STEPS = cfg.SPEC_TIME_STEPS
-    
     def __init__(self, model):
         super().__init__()
         self.model = model
@@ -38,7 +52,13 @@ class GANAIModelWrapper(AIModel):
 
         if self.current_epoch == 0 and batch_idx == 0:
             with torch.no_grad():
-                z = torch.randn(batch_size, self.LATENT_DIM, device=self.device)
+                z = torch.randn(
+                    batch_size,
+                    cfg.LATENT_CHANNELS,
+                    cfg.SPEC_ROWS // (2 ** (len(cfg.CNN) - 1)),
+                    cfg.SPEC_COLS // (2 ** (len(cfg.CNN) - 1)),
+                    device=self.device
+                )
                 gen_imgs = self(z, genres).detach()
             pred_real = self.model.discriminator(real_imgs, genres)
             pred_fake = self.model.discriminator(gen_imgs, genres)
@@ -50,7 +70,13 @@ class GANAIModelWrapper(AIModel):
             opt_d.step()
             self.log("d_loss", d_loss, prog_bar=True)
 
-        z = torch.randn(batch_size, self.LATENT_DIM, device=self.device)
+        z = torch.randn(
+            batch_size,
+            cfg.LATENT_CHANNELS,
+            cfg.SPEC_ROWS // (2 ** (len(cfg.CNN) - 1)),
+            cfg.SPEC_COLS // (2 ** (len(cfg.CNN) - 1)),
+            device=self.device
+        )
         gen_imgs = self(z, genres)
         pred_fake = self.model.discriminator(gen_imgs, genres)
         g_loss = self.adversarial_loss(pred_fake, valid)
@@ -61,7 +87,13 @@ class GANAIModelWrapper(AIModel):
         self.train_step_metrics.append({"epoch": self.current_epoch, "batch": batch_idx, "g_loss": g_loss.item()})
 
         if not (self.current_epoch == 0 and batch_idx == 0):
-            z = torch.randn(batch_size, self.LATENT_DIM, device=self.device)
+            z = torch.randn(
+                batch_size,
+                cfg.LATENT_CHANNELS,
+                cfg.SPEC_ROWS // (2 ** (len(cfg.CNN) - 1)),
+                cfg.SPEC_COLS // (2 ** (len(cfg.CNN) - 1)),
+                device=self.device
+            )
             gen_imgs = self(z, genres).detach()
             pred_real = self.model.discriminator(real_imgs, genres)
             pred_fake = self.model.discriminator(gen_imgs, genres)
@@ -80,7 +112,13 @@ class GANAIModelWrapper(AIModel):
         valid = torch.ones(batch_size, 1, device=self.device)
         fake = torch.zeros(batch_size, 1, device=self.device)
 
-        z = torch.randn(batch_size, self.LATENT_DIM, device=self.device)
+        z = torch.randn(
+            batch_size,
+            cfg.LATENT_CHANNELS,
+            cfg.SPEC_ROWS // (2 ** (len(cfg.CNN) - 1)),
+            cfg.SPEC_COLS // (2 ** (len(cfg.CNN) - 1)),
+            device=self.device
+        )
         gen_imgs = self(z, genres)
         pred_fake = self.model.discriminator(gen_imgs, genres)
         g_loss = self.adversarial_loss(pred_fake, valid)
@@ -116,7 +154,6 @@ class GANAIModelWrapper(AIModel):
                 "val_loss": mean_val_loss
             })
     def configure_optimizers(self):
-        lr = 2e-4
-        opt_g = torch.optim.Adam(self.model.generator.parameters(), lr=lr, betas=(0.5, 0.999))
-        opt_d = torch.optim.Adam(self.model.discriminator.parameters(), lr=lr, betas=(0.5, 0.999))
+        opt_g = torch.optim.Adam(self.model.generator.parameters(), lr=cfg.LEARNING_RATE, betas=(cfg.GAN_BETA_MIN, cfg.GAN_BETA_MAX))
+        opt_d = torch.optim.Adam(self.model.discriminator.parameters(), lr=cfg.LEARNING_RATE, betas=(cfg.GAN_BETA_MIN, cfg.GAN_BETA_MAX))
         return [opt_g, opt_d]
