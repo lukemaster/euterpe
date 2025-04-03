@@ -1,3 +1,22 @@
+# Copyright (C) 2025 Rafael Luque Tejada
+# Author: Rafael Luque Tejada <lukemaster.master@gmail.com>
+#
+# This file is part of Generación de Música Personalizada a través de Modelos Generativos Adversariales.
+#
+# Euterpe as a part of the project Generación de Música Personalizada a través de Modelos Generativos Adversariales is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# Generación de Música Personalizada a través de Modelos Generativos Adversariales is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+
 import os
 import json
 import pandas as pd
@@ -9,7 +28,7 @@ class FMADatasource(Datasource):
         super().__init__(datasets_path,'fma')
         self.dataset_path = os.path.join(self.datasets_path,'fma','data')
         self.metadata_path = os.path.join(self.dataset_path,'fma_metadata')
-        self.files_path = '/VIU/09MIAR/datasets/fma/fma_large'
+        self.files_path = os.environ.get('FMA_PATH')
 
         genres_df = pd.read_csv(os.path.join(self.metadata_path,'genres.csv'))
         genres_df = genres_df[['genre_id','title']]
@@ -30,13 +49,6 @@ class FMADatasource(Datasource):
         self.genres_id['track_id'] = self.genres_id['track_id'].fillna(-1).astype(int).astype(str).str.zfill(6)
         self.genres_id['folder'] = self.genres_id['track_id'].apply(lambda x: x[0:3])
         self.genres_id = self.genres_id.apply(lambda x: self.check_file_in_folder(x), axis=1, )
-
-        # print(GENRE_TRANSLATOR)
-        # print(GENRE_ID_TRANSLATOR)
-        # print(GENRE_TRANSLATOR[GENRE_ID_TRANSLATOR['fma'][21]]['system'])
-        # print(GENRE_TRANSLATOR[GENRE_ID_TRANSLATOR['fma'][4]]['system'])
-
-
         self.genres_id = self.genres_id.dropna(subset=['genre_id'])
         self.genres_id = self.genres_id.reset_index(drop=True)
 

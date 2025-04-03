@@ -1,0 +1,13 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+__pycache__
+
+# local launcher
+train/gan_executor.ipynb
+train/vae_executor.ipynb
+
+# local config
+.env
+
+# misc
+.DS_Store

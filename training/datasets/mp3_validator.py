@@ -1,41 +1,56 @@
+# Copyright (C) 2025 Rafael Luque Tejada
+# Author: Rafael Luque Tejada <lukemaster.master@gmail.com>
+#
+# This file is part of Generación de Música Personalizada a través de Modelos Generativos Adversariales.
+#
+# Euterpe as a part of the project Generación de Música Personalizada a través de Modelos Generativos Adversariales is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# Generación de Música Personalizada a través de Modelos Generativos Adversariales is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+
 ## KEEP IT IN A BLOCK ##
 import numpy as np
+
+from training.config import Config
 np.complex = complex  # Corrección temporal necesaria para librosa
 import librosa
 import librosa.display
 ########################
 
 import os
-import gc
 import torch
-import subprocess
 from mutagen.mp3 import MP3
 
 from .validator_dataset import ValidatorDataset
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-from dotenv import load_dotenv
-load_dotenv('./VIU/09MIAR/src/vae/.env')
+cfg = Config()
 
 class MP3ValidatorDataset(ValidatorDataset):
-    def __init__(self, file_paths, labels, valid_files_csv_path, n_mels, hop_length_ms, cut_duration, sample_rate):
-        super().__init__(valid_files_csv_path, hop_length_ms, sample_rate, cut_duration)
-        self.SAMPLE_RATE = int(os.environ.get('SAMPLE_RATE'))
-        self.N_FFT = int(os.environ.get('N_FFT'))
-        self.HOP_LENGTH = int(os.environ.get('HOP_LENGTH'))
-        self.NUM_MELS = int(os.environ.get('NUM_MELS'))
+    def __init__(self, file_paths, labels, valid_files_csv_path, cut_duration):
+        super().__init__(valid_files_csv_path, cut_duration)
+        self.SAMPLE_RATE = cfg.SAMPLE_RATE
+        self.N_FFT = cfg.N_FFT
+        self.HOP_LENGTH = cfg.HOP_LENGTH
         
         self.file_paths = file_paths
         self.labels = labels
         self.counter = 0
-        self.desired_sample_rate = self.SAMPLE_RATE#44100
+        self.desired_sample_rate = self.SAMPLE_RATE
         self.cut_duration = cut_duration
 
         # filter invalid files
         print('Creating valid_files')
         self.valid_files = [fp for fp in self.file_paths if self.is_valid_file(fp)]
-        print('done valid_files')
+        print('Done valid_files')
 
     def __len__(self):
         return len(self.valid_files)
@@ -59,7 +74,6 @@ class MP3ValidatorDataset(ValidatorDataset):
     def __getitem__(self, idx):
         if idx < self.__len__():
             file_path = self.valid_files[idx]
-            # print(f'''count {self.counter} validating {file_path}''',end='\r')
             self.counter +=1
             
             try:
@@ -77,16 +91,11 @@ class MP3ValidatorDataset(ValidatorDataset):
                     sample_rate = self.desired_sample_rate 
                 elif sample_rate < self.SAMPLE_RATE:
                         return self.jump_next_file(idx)
-                
-                # if subprocess.run(["mpg123", "-t", file_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
-                #     print('Invalid MP3 file')
-                #     return self.jump_next_file(idx)
-
 
                 num_samples = int(sr * self.cut_duration)
                 waveform = waveform[:num_samples]
                 
-                mel_spectrogram = librosa.feature.melspectrogram(y=waveform, sr=sr, n_mels=self.NUM_MELS, hop_length=self.HOP_LENGTH)
+                mel_spectrogram = librosa.feature.melspectrogram(y=waveform, sr=sr, n_mels=cfg.NUM_MELS, hop_length=self.HOP_LENGTH)
                 mel_spectrogram = librosa.amplitude_to_db(mel_spectrogram, ref=np.max)
 
                 if len(mel_spectrogram.shape) == 0:
@@ -102,7 +111,7 @@ class MP3ValidatorDataset(ValidatorDataset):
                     mel_spectrogram = np.squeeze(mel_spectrogram)
                     # print(f'Fixed shape: {mel_spectrogram.shape}')
 
-                if mel_spectrogram.shape != (self.NUM_MELS, mel_spectrogram.shape[1]):
+                if mel_spectrogram.shape != (cfg.NUM_MELS, mel_spectrogram.shape[1]):
                     # print(f'Error: unexpected final shape {mel_spectrogram.shape}.')
                     return self.jump_next_file(idx)
 
@@ -120,7 +129,7 @@ class MP3ValidatorDataset(ValidatorDataset):
                 return True, label, file_path, duration#, hop_length, sample_rate
 
             except Exception as e:
-                # print(f'Error procesando {file_path}: {e}')
+                # print(f'Error processing {file_path}: {e}')
                 # import traceback
                 # traceback.print_exc()
                 return self.jump_next_file(idx)

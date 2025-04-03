@@ -1,55 +1,46 @@
+# Copyright (C) 2025 Rafael Luque Tejada
+# Author: Rafael Luque Tejada <lukemaster.master@gmail.com>
+#
+# This file is part of Generación de Música Personalizada a través de Modelos Generativos Adversariales.
+#
+# Euterpe as a part of the project Generación de Música Personalizada a través de Modelos Generativos Adversariales is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# Generación de Música Personalizada a través de Modelos Generativos Adversariales is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+
 class Datasource():
     def __init__(self, datasets_path, datasource_name):
         self.datasets_path = datasets_path
         self.datasource_name = datasource_name
-        self.GENRE_TITLE = ['hip-hop','jazz','rock','pop','blues']
-        self.GENRE_TRANSLATOR = {
-            'hip-hop': {
-                'system': 0,
-                'fma': None,
-                'million': None,
-                'jamendo': None,
-            }, 
-            'jazz': {
-                'system': 1,
-                'fma': None,
-                'million': None,
-                'jamendo': None,
-            },
-            'rock': {
-                'system': 2,
-                'fma': None,
-                'million': None,
-                'jamendo': None,
-            },
-            'pop': {
-                'system': 3,
-                'fma': None,
-                'million': None,
-                'jamendo': None,
-            },
-            'blues': {
-                'system': 4,
-                'fma': None,
-                'million': None,
-                'jamendo': None,
-            }
-        }
+        self.genres_id = None
+        self.file_paths = None
+        self.labels = None
+
+        self.GENRE_TRANSLATOR = {}
         self.GENRE_ID_TRANSLATOR = {
             'fma': {},
             'million': {},
             'jamendo': {},
         }
-        self.GENRE_IDS = {
-            'hip-hop': 0, 
-            'jazz': 1, 
-            'rock': 2,
-            'pop': 3,
-            'blues': 4
-        }
-        self.genres_id = None
-        self.file_paths = None
-        self.labels = None
+        self.GENRE_TITLE = ['hip-hop','jazz','rock','pop','blues']
+        self.GENRE_IDS = {}
+        for i, genre_title in enumerate(self.GENRE_TITLE):
+            self.GENRE_TRANSLATOR[genre_title] = {
+                'system': 0,
+                'fma': None,
+                'million': None,
+                'jamendo': None,
+            }
+            self.GENRE_IDS[genre_title] = i
 
     def filter_dataset_for_genres(self, dataset, dataset_key):
         genre_ids_filtered = list(self.GENRE_ID_TRANSLATOR[dataset_key].keys())
@@ -81,19 +72,19 @@ class Datasource():
          # making indexed object by genre and numeric label
         tracks_by_genre = {}
         tracks_by_label = {}
-        minAmount = 0 # minimal common amount for all genres
+        min_amount = 0 # minimal common amount for all genres
         for gen,label in self.GENRE_IDS.items():
             tracks_by_label[label] = self.getTracksByLabel(dict_dataset,label)
             tracks_by_genre[gen] = len(tracks_by_label[label])
-            minAmount = max(minAmount,tracks_by_genre[gen])
+            min_amount = max(min_amount,tracks_by_genre[gen])
 
-        minAmount = limit if limit else minAmount
+        min_amount = limit if limit else min_amount
 
-        # getting balance dataset (based on minAmount)
+        # getting balance dataset (based on min_amount)
         balanced_dict_dataset = {}
         for _,label in self.GENRE_IDS.items():
-            keys = list(tracks_by_label[label].keys())[:minAmount]
+            keys = list(tracks_by_label[label].keys())[:min_amount]
             for k in keys:
                 balanced_dict_dataset[k] = dict_dataset[k]
 
-        return minAmount, balanced_dict_dataset
+        return min_amount, balanced_dict_dataset
