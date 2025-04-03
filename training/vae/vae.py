@@ -82,7 +82,7 @@ class VAE(nn.Module):
             self.genre_embedding = nn.Embedding(self.NUM_GENRES, self.GENRE_EMBEDDING_DIM)
             self.fc = nn.Linear(self.LATENT_DIM + self.GENRE_EMBEDDING_DIM, feature_dim)
 
-            self.lstm = nn.LSTM(input_size=flattened_shape[1], hidden_size=flattened_shape[1], num_layers=1, batch_first=True)
+            self.lstm = nn.LSTM(input_size=flattened_shape[0], hidden_size=flattened_shape[1], num_layers=1, batch_first=True)
 
             self.deconv1 = nn.ConvTranspose2d(128, 64, kernel_size=4, stride=2, padding=1)
             self.deconv2 = nn.ConvTranspose2d(64, 32, kernel_size=4, stride=2, padding=1)
