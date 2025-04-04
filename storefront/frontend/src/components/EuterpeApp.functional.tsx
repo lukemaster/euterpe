@@ -33,8 +33,6 @@ const Button = (props: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
   <button className='text-lg px-6 py-3 rounded bg-green-700 text-green-100 hover:bg-green-600 disabled:opacity-50' {...props} />
 )
 
-const availableGenres = ['jazz', 'rock', 'clásica', 'electrónica', 'lo-fi', 'ambient']
-
 export default function EuterpeApp(): JSX.Element {
   const [genre, setGenre] = useState<string>('')
   const [generatedTruck, setGeneratedTruck] = useState<GeneratedTruck | null>(null)
@@ -42,11 +40,15 @@ export default function EuterpeApp(): JSX.Element {
   const [state, setState] = useState<'idle' | 'generating' | 'generated' | 'rated'>('idle')
   const helpRef = useRef<HTMLDivElement | null>(null)
   const [help, setHelp] = useState<string>('')
+  const [availableGenres, setAvailableGenres] = useState<string[]>([])
 
   useEffect(() => {
     fetch('/api/help')
       .then((res) => res.json())
       .then((data) => setHelp(data.texto))
+    fetch('/api/genres')
+      .then((res) => res.json())
+      .then((data) => setAvailableGenres(data.texto))
   }, [])
 
   const generateTruck = async (): Promise<void> => {

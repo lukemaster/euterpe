@@ -26,7 +26,7 @@ import csv
 from generator.generator import MusicGenerator  # GAN real o dummy
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/api/*": {"origins": "http://localhost:5173"}})
 
 generator = MusicGenerator()
 generator.eval()
@@ -53,7 +53,7 @@ def generation_register(genre: str, noise: float, file_name: str) -> None:
             writer.writerow(['timestamp', 'genre', 'noise', 'archivo'])
         writer.writerow([datetime.utcnow().isoformat(), genre, noise, file_name])
 
-@app.route('/api/generar', methods=['POST'])
+@app.route('/api/generate', methods=['POST'])
 def generar() -> Response:
     data: PayloadGenerator = request.get_json()
     genre: str = data.get('genre', 'unknown')
@@ -77,8 +77,8 @@ def generar() -> Response:
     }
     return jsonify(response)
 
-@app.route('/api/valorar', methods=['POST'])
-def valorar() -> tuple[str, int]:
+@app.route('/api/rate', methods=['POST'])
+def rate() -> tuple[str, int]:
     # No se almacena la valoración en CSV en esta versión TODO
     return ('', 204)
 
@@ -89,12 +89,12 @@ def ayuda() -> Response:
     Cada pieza es única gracias al noise aleatorio con el que se crea.
     Tus valoraciones ayudan a mejorar el sistema.
     '''
-    response: HelpResponse = {'texto': texto.strip()}
-    return jsonify(response)
+    return jsonify({"texto": texto.strip()})
+
 
 @app.route('/api/genres')
 def genres() -> Response:
-    return jsonify(['jazz', 'rock', 'clásica', 'electrónica', 'lo-fi', 'ambient'])
+    return jsonify({'genres':['hip-hop','jazz','rock','pop','blues']})
 
 @app.route('/api/history')
 def historial() -> Response:
@@ -107,4 +107,4 @@ def historial() -> Response:
 
 if __name__ == '__main__':
     os.makedirs('static/generated', exist_ok=True)
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=True)
