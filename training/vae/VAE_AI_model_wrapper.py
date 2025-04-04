@@ -35,6 +35,7 @@ class VAEAIModelWrapper(AIModel):
     def __init__(self, model):
         super().__init__()
         self.model = model
+        self.model_name = "VAE"
         self.register_buffer("mean_x_buffer", torch.tensor(0.0))
         self.register_buffer("std_x_buffer", torch.tensor(1.0))
 
@@ -198,27 +199,46 @@ class VAEAIModelWrapper(AIModel):
         self.x_count.zero_()
 
         if self.train_step_metrics:
+            for row in self.train_step_metrics:
+                row["model_name"] = self.model_name
             df_train = pd.DataFrame(self.train_step_metrics)
             df_train.to_csv("logs/csv/metrics_train_step.csv", mode='a', header=not os.path.exists("logs/csv/metrics_train_step.csv"), index=False)
             self.train_step_metrics.clear()
 
         if self.val_step_metrics:
+            for row in self.val_step_metrics:
+                row["model_name"] = self.model_name
             df_val = pd.DataFrame(self.val_step_metrics)
             df_val.to_csv("logs/csv/metrics_val_step.csv", mode='a', header=not os.path.exists("logs/csv/metrics_val_step.csv"), index=False)
             self.val_step_metrics.clear()
 
-        epoch_metrics = {
+        train_metrics_epoch = {
             "epoch": self.current_epoch,
             "x_mean": self.mean_x,
-            "x_std": self.std_x
+            "x_std": self.std_x,
+            "model_name": self.model_name
         }
-        self.train_epoch_metrics.append(epoch_metrics)
+
+        if len(self.train_step_metrics):
+            df_tmp = pd.DataFrame(self.train_step_metrics)
+            for key in ["loss", "recon_loss", "kl_div", "beta"]:
+                train_metrics_epoch[f"{key}"] = df_tmp[key].mean()
+
+        self.train_epoch_metrics.append(train_metrics_epoch)
         df_epoch = pd.DataFrame(self.train_epoch_metrics)
         df_epoch.to_csv("logs/csv/metrics_train_epoch.csv", index=False)
 
         if self.val_epoch_metrics:
             df_val_epoch = pd.DataFrame(self.val_epoch_metrics)
             df_val_epoch.to_csv("logs/csv/metrics_val_epoch.csv", index=False)
+
+        current_lr = self.trainer.optimizers[0].param_groups[0]["lr"]
+        lr_data = pd.DataFrame([{
+            "epoch": self.current_epoch,
+            "lr": current_lr,
+            "model_name": self.model_name
+        }])
+        lr_data.to_csv("logs/csv/metrics_lr.csv", mode='a', header=not os.path.exists("logs/csv/metrics_lr.csv"), index=False)
 
         extra = {
             "mean_x": self.mean_x,
@@ -236,28 +256,30 @@ class VAEAIModelWrapper(AIModel):
             plt.savefig(f"logs/img/stats_epoch_{self.current_epoch}.jpg")
             plt.close()
 
-        torch.save({"model": self.state_dict(), "extra": extra}, f'''checkpoints/vae_last_{self.current_epoch}.pt''')
+        torch.save({"model": self.state_dict(), "extra": extra}, f"checkpoints/vae_last_{self.current_epoch}.pt")
 
         if self.val_epoch_metrics:
             current_val_loss = self.val_epoch_metrics[-1]["val_loss"]
             if current_val_loss < self.best_val_loss:
                 self.best_val_loss = current_val_loss
                 torch.save({"model": self.state_dict(), "extra": extra}, "checkpoints/vae_best.pt")
-                torch.save(self.state_dict(), f"checkpoints/vae_best.pt")
                 print(f"[INFO] New best model saved (val_loss={current_val_loss:.4f})")
 
         self.save_genre_limits()
 
     def on_validation_epoch_end(self):
         if self.val_step_metrics:
-            val_g_losses = [m["val_g_loss"] for m in self.val_step_metrics if "val_g_loss" in m]
-            val_d_losses = [m["val_d_loss"] for m in self.val_step_metrics if "val_d_loss" in m]
-            if val_g_losses and val_d_losses:
-                self.val_epoch_metrics.append({
-                    "epoch": self.current_epoch,
-                    "val_g_loss": float(np.mean(val_g_losses)),
-                    "val_d_loss": float(np.mean(val_d_losses))
-                })
+            val_epoch = {
+                "epoch": self.current_epoch,
+                "model_name": self.model_name
+            }
+            keys = ["val_loss", "val_recon_loss", "val_kl_div", "beta"]
+            df_val = pd.DataFrame(self.val_step_metrics)
+            for key in keys:
+                if key in df_val:
+                    val_epoch[key] = df_val[key].mean()
+            self.val_epoch_metrics.append(val_epoch)
+
     
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=cfg.LEARNING_RATE)
