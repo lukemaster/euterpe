@@ -72,8 +72,6 @@ class VAE(nn.Module):
 
             mu = self.conv_mu(x)
             logvar = self.conv_logvar(x)
-            # logvar = torch.clamp(logvar, min=-10, max=10)
-
 
             if self.debug:
                 print(f"[ENCODER] mu: {mu.shape}, logvar: {logvar.shape}")
@@ -119,13 +117,6 @@ class VAE(nn.Module):
                                 padding=cfg.CNN_PADDING,
                                 output_padding=(0,1))
             )
-
-        def calculate_output_padding(self, in_channels, out_channels):
-            stride = cfg.CNN_STRIDE
-            kernel_size = cfg.CNN_KERNEL
-            padding = cfg.CNN_PADDING
-            
-            return (stride - 1) * self.h - stride + kernel_size - self.h
 
         def forward(self, z, genre):
             if self.debug:
