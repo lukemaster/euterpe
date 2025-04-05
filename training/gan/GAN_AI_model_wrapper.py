@@ -18,13 +18,14 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import os
+import json
 import numpy as np
-
 import torch
 import torch.nn.functional as F
-
 import pandas as pd
 import matplotlib.pyplot as plt
+from datetime import datetime
+from contextlib import redirect_stdout
 
 from training.AI_model import AIModel
 from training.config import Config
@@ -37,11 +38,29 @@ class GANAIModelWrapper(AIModel):
         self.model = model
         self.model_name = "GAN"
         self.automatic_optimization = False
-        os.makedirs("samples", exist_ok=True)
-        os.makedirs("logs/csv", exist_ok=True)
-        os.makedirs("logs/img", exist_ok=True)
-        os.makedirs("checkpoints", exist_ok=True)
 
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+        self.base_log_dir = os.path.join("logs", f"{timestamp}_{self.model_name}_{cfg.KIND_OF_SPECTROGRAM}")
+        self.csv_dir = os.path.join(self.base_log_dir, "csv")
+        self.img_dir = os.path.join(self.base_log_dir, "img")
+        self.ckpt_dir = os.path.join(self.base_log_dir, "checkpoints")
+        self.samples_dir = os.path.join(self.base_log_dir, "samples")
+
+        os.makedirs(self.csv_dir, exist_ok=True)
+        os.makedirs(self.img_dir, exist_ok=True)
+        os.makedirs(self.ckpt_dir, exist_ok=True)
+        os.makedirs(self.samples_dir, exist_ok=True)
+
+        with open(os.path.join(self.base_log_dir, "config.json"), "w") as f:
+            json.dump(cfg.__dict__, f, indent=4)
+
+        summary_path = os.path.join(self.base_log_dir, "model_summary.txt")
+        with open(summary_path, "w") as f:
+            with redirect_stdout(f):
+                print("=== Generator ===")
+                print(self.model.generator)
+                print("\n=== Discriminator ===")
+                print(self.model.discriminator)
 
     def forward(self, z, genre):
             return self.model.generator(z, genre)
@@ -145,7 +164,7 @@ class GANAIModelWrapper(AIModel):
             for row in self.train_step_metrics:
                 row["model_name"] = self.model_name
             df = pd.DataFrame(self.train_step_metrics)
-            df.to_csv("logs/csv/gan_train_step.csv", mode='a', header=not os.path.exists("logs/csv/gan_train_step.csv"), index=False)
+            df.to_csv(os.path.join(self.csv_dir, "gan_train_step.csv"), mode='a', header=not os.path.exists(os.path.join(self.csv_dir, "gan_train_step.csv")), index=False)
 
             df_epoch = {
                 "epoch": self.current_epoch,
@@ -156,7 +175,7 @@ class GANAIModelWrapper(AIModel):
                 df_epoch["d_loss"] = df["d_loss"].mean()
 
             self.train_epoch_metrics.append(df_epoch)
-            pd.DataFrame(self.train_epoch_metrics).to_csv("logs/csv/gan_train_epoch.csv", index=False)
+            pd.DataFrame(self.train_epoch_metrics).to_csv(os.path.join(self.csv_dir, "gan_train_epoch.csv"), index=False)
 
             self.train_step_metrics.clear()
 
@@ -164,7 +183,7 @@ class GANAIModelWrapper(AIModel):
             for row in self.val_step_metrics:
                 row["model_name"] = self.model_name
             df_val = pd.DataFrame(self.val_step_metrics)
-            df_val.to_csv("logs/csv/gan_val_step.csv", mode='a', header=not os.path.exists("logs/csv/gan_val_step.csv"), index=False)
+            df_val.to_csv(os.path.join(self.csv_dir, "gan_val_step.csv"), mode='a', header=not os.path.exists(os.path.join(self.csv_dir, "gan_val_step.csv")), index=False)
 
             df_epoch_val = {
                 "epoch": self.current_epoch,
@@ -175,7 +194,7 @@ class GANAIModelWrapper(AIModel):
             if "val_d_loss" in df_val:
                 df_epoch_val["val_d_loss"] = df_val["val_d_loss"].mean()
             self.val_epoch_metrics.append(df_epoch_val)
-            pd.DataFrame(self.val_epoch_metrics).to_csv("logs/csv/gan_val_epoch.csv", index=False)
+            pd.DataFrame(self.val_epoch_metrics).to_csv(os.path.join(self.csv_dir, "gan_val_epoch.csv"), index=False)
 
             self.val_step_metrics.clear()
 
@@ -187,7 +206,7 @@ class GANAIModelWrapper(AIModel):
             "lr_d": current_lr_d,
             "model_name": self.model_name
         }])
-        df_lr.to_csv("logs/csv/gan_lr.csv", mode='a', header=not os.path.exists("logs/csv/gan_lr.csv"), index=False)
+        df_lr.to_csv(os.path.join(self.csv_dir, "gan_lr.csv"), mode='a', header=not os.path.exists(os.path.join(self.csv_dir, "gan_lr.csv")), index=False)
 
         if len(self.train_epoch_metrics) > 1:
             df_plot = pd.DataFrame(self.train_epoch_metrics)
@@ -200,16 +219,16 @@ class GANAIModelWrapper(AIModel):
             plt.title("GAN losses")
             plt.legend()
             plt.tight_layout()
-            plt.savefig(f"logs/img/gan_losses_epoch_{self.current_epoch}.jpg")
+            plt.savefig(os.path.join(self.img_dir, f"gan_losses_epoch_{self.current_epoch}.jpg"))
             plt.close()
 
-        torch.save(self.state_dict(), f"checkpoints/gan_last_{self.current_epoch}.pt")
+        torch.save(self.state_dict(), os.path.join(self.ckpt_dir, f"gan_last_{self.current_epoch}.pt"))
 
         if self.val_epoch_metrics:
             current_val_loss = self.val_epoch_metrics[-1].get("val_g_loss", None)
             if current_val_loss is not None and current_val_loss < self.best_val_loss:
                 self.best_val_loss = current_val_loss
-                torch.save(self.state_dict(), "checkpoints/gan_best.pt")
+                torch.save(self.state_dict(), os.path.join(self.ckpt_dir, "gan_best.pt"))
                 print(f"[INFO] New best GAN model saved (val_g_loss={current_val_loss:.4f})")
 
     
@@ -221,6 +240,7 @@ class GANAIModelWrapper(AIModel):
                 "epoch": self.current_epoch,
                 "val_loss": mean_val_loss
             })
+
     def configure_optimizers(self):
         opt_g = torch.optim.Adam(self.model.generator.parameters(), lr=cfg.LEARNING_RATE, betas=(cfg.GAN_BETA_MIN, cfg.GAN_BETA_MAX))
         opt_d = torch.optim.Adam(self.model.discriminator.parameters(), lr=cfg.LEARNING_RATE, betas=(cfg.GAN_BETA_MIN, cfg.GAN_BETA_MAX))

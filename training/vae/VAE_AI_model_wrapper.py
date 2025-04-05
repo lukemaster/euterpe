@@ -17,14 +17,15 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import os
+import json
 import numpy as np
-
 import torch
 import torch.nn.functional as F
-
-
 import pandas as pd
 import matplotlib.pyplot as plt
+from datetime import datetime
+from contextlib import redirect_stdout
+from torchsummary import summary
 
 from training.AI_model import AIModel
 from training.config import Config
@@ -40,9 +41,28 @@ class VAEAIModelWrapper(AIModel):
         self.register_buffer("mean_x_buffer", torch.tensor(0.0))
         self.register_buffer("std_x_buffer", torch.tensor(1.0))
 
-        os.makedirs("logs/csv", exist_ok=True)
-        os.makedirs("logs/img", exist_ok=True)
-        os.makedirs("checkpoints", exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+        self.base_log_dir = os.path.join("logs", f"{timestamp}_{self.model_name}_{cfg.KIND_OF_SPECTROGRAM}")
+        self.csv_dir = os.path.join(self.base_log_dir, "csv")
+        self.img_dir = os.path.join(self.base_log_dir, "img")
+        self.ckpt_dir = os.path.join(self.base_log_dir, "checkpoints")
+        self.samples_dir = os.path.join(self.base_log_dir, "samples")
+
+        os.makedirs(self.csv_dir, exist_ok=True)
+        os.makedirs(self.img_dir, exist_ok=True)
+        os.makedirs(self.ckpt_dir, exist_ok=True)
+        os.makedirs(self.samples_dir, exist_ok=True)
+
+        with open(os.path.join(self.base_log_dir, "config.json"), "w") as f:
+            json.dump(cfg.__dict__, f, indent=4)
+
+        summary_path = os.path.join(self.base_log_dir, "model_summary.txt")
+        with open(summary_path, "w") as f:
+            with redirect_stdout(f):
+                print("=== Encoder ===")
+                print(self.model.encoder)
+                print("\n=== Decoder ===")
+                print(self.model.decoder)
     
     def forward(self, x, genre):
         x = x[..., :cfg.SPEC_TIME_STEPS]
@@ -248,14 +268,14 @@ class VAEAIModelWrapper(AIModel):
             for row in self.train_step_metrics:
                 row["model_name"] = self.model_name
             df_train = pd.DataFrame(self.train_step_metrics)
-            df_train.to_csv("logs/csv/metrics_train_step.csv", mode='a', header=not os.path.exists("logs/csv/metrics_train_step.csv"), index=False)
+            df_train.to_csv(os.path.join(self.csv_dir, "metrics_train_step.csv"), mode='a', header=not os.path.exists(os.path.join(self.csv_dir, "metrics_train_step.csv")), index=False)
             self.train_step_metrics.clear()
 
         if self.val_step_metrics:
             for row in self.val_step_metrics:
                 row["model_name"] = self.model_name
             df_val = pd.DataFrame(self.val_step_metrics)
-            df_val.to_csv("logs/csv/metrics_val_step.csv", mode='a', header=not os.path.exists("logs/csv/metrics_val_step.csv"), index=False)
+            df_val.to_csv(os.path.join(self.csv_dir, "metrics_val_step.csv"), mode='a', header=not os.path.exists(os.path.join(self.csv_dir, "metrics_val_step.csv")), index=False)
             self.val_step_metrics.clear()
 
         train_metrics_epoch = {
@@ -272,11 +292,11 @@ class VAEAIModelWrapper(AIModel):
 
         self.train_epoch_metrics.append(train_metrics_epoch)
         df_epoch = pd.DataFrame(self.train_epoch_metrics)
-        df_epoch.to_csv("logs/csv/metrics_train_epoch.csv", index=False)
+        df_epoch.to_csv(os.path.join(self.csv_dir, "metrics_train_epoch.csv"), index=False)
 
         if self.val_epoch_metrics:
             df_val_epoch = pd.DataFrame(self.val_epoch_metrics)
-            df_val_epoch.to_csv("logs/csv/metrics_val_epoch.csv", index=False)
+            df_val_epoch.to_csv(os.path.join(self.csv_dir, "metrics_val_epoch.csv"), index=False)
 
         current_lr = self.trainer.optimizers[0].param_groups[0]["lr"]
         lr_data = pd.DataFrame([{
@@ -284,31 +304,15 @@ class VAEAIModelWrapper(AIModel):
             "lr": current_lr,
             "model_name": self.model_name
         }])
-        lr_data.to_csv("logs/csv/metrics_lr.csv", mode='a', header=not os.path.exists("logs/csv/metrics_lr.csv"), index=False)
+        lr_data.to_csv(os.path.join(self.csv_dir, "metrics_lr.csv"), mode='a', header=not os.path.exists(os.path.join(self.csv_dir, "metrics_lr.csv")), index=False)
 
-        extra = {
-            "mean_x": self.mean_x,
-            "std_x": self.std_x
-        }
-
-        if len(df_epoch) > 1:
-            plt.figure()
-            plt.plot(df_epoch["epoch"], df_epoch["x_mean"], label="x_mean")
-            plt.plot(df_epoch["epoch"], df_epoch["x_std"], label="x_std")
-            plt.xlabel("Epoch")
-            plt.ylabel("Valor")
-            plt.legend()
-            plt.title("x mean and std")
-            plt.savefig(f"logs/img/stats_epoch_{self.current_epoch}.jpg")
-            plt.close()
-
-        torch.save({"model": self.state_dict(), "extra": extra}, f"checkpoints/vae_last_{self.current_epoch}.pt")
+        torch.save(self.state_dict(), os.path.join(self.ckpt_dir, f"vae_last_{self.current_epoch}.pt"))
 
         if self.val_epoch_metrics:
             current_val_loss = self.val_epoch_metrics[-1]["val_loss"]
             if current_val_loss < self.best_val_loss:
                 self.best_val_loss = current_val_loss
-                torch.save({"model": self.state_dict(), "extra": extra}, "checkpoints/vae_best.pt")
+                torch.save(self.state_dict(), os.path.join(self.ckpt_dir, "vae_best.pt"))
                 print(f"[INFO] New best model saved (val_loss={current_val_loss:.4f})")
 
         self.save_genre_limits()
@@ -326,7 +330,6 @@ class VAEAIModelWrapper(AIModel):
                     val_epoch[key] = df_val[key].mean()
             self.val_epoch_metrics.append(val_epoch)
 
-    
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=cfg.LEARNING_RATE)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", patience=cfg.LR_SCHEDULER_PATIENTE, factor=cfg.LR_SCHEDULER_FACTOR, verbose=True)
