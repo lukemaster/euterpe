@@ -60,7 +60,7 @@ class GANAIModelWrapper(AIModel):
             with torch.no_grad():
                 z = torch.randn(
                     batch_size,
-                    cfg.LATENT_CHANNELS,
+                    cfg.LATENT_DIM,
                     cfg.SPEC_ROWS // (2 ** (len(cfg.CNN) - 1)),
                     cfg.SPEC_COLS // (2 ** (len(cfg.CNN) - 1)),
                     device=self.device
@@ -78,7 +78,7 @@ class GANAIModelWrapper(AIModel):
 
         z = torch.randn(
             batch_size,
-            cfg.LATENT_CHANNELS,
+            cfg.LATENT_DIM,
             cfg.SPEC_ROWS // (2 ** (len(cfg.CNN) - 1)),
             cfg.SPEC_COLS // (2 ** (len(cfg.CNN) - 1)),
             device=self.device
@@ -95,7 +95,7 @@ class GANAIModelWrapper(AIModel):
         if not (self.current_epoch == 0 and batch_idx == 0):
             z = torch.randn(
                 batch_size,
-                cfg.LATENT_CHANNELS,
+                cfg.LATENT_DIM,
                 cfg.SPEC_ROWS // (2 ** (len(cfg.CNN) - 1)),
                 cfg.SPEC_COLS // (2 ** (len(cfg.CNN) - 1)),
                 device=self.device
@@ -120,7 +120,7 @@ class GANAIModelWrapper(AIModel):
 
         z = torch.randn(
             batch_size,
-            cfg.LATENT_CHANNELS,
+            cfg.LATENT_DIM,
             cfg.SPEC_ROWS // (2 ** (len(cfg.CNN) - 1)),
             cfg.SPEC_COLS // (2 ** (len(cfg.CNN) - 1)),
             device=self.device

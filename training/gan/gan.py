@@ -31,7 +31,7 @@ class GAN(nn.Module):
         def __init__(self):
             super().__init__()
             self.latent_channels, self.h, self.w = (
-                cfg.LATENT_CHANNELS,
+                cfg.LATENT_DIM,
                 cfg.SPEC_ROWS // (2 ** (len(cfg.CNN) - 1)),
                 cfg.SPEC_COLS // (2 ** (len(cfg.CNN) - 1))
             )
@@ -51,22 +51,39 @@ class GAN(nn.Module):
 
             self.fc_out = nn.Linear(self.token_dim + cfg.GENRE_EMBED_DIM, self.token_dim)
 
+            if cfg.KIND_OF_SPECTROGRAM == 'MEL':
+                deconv_kernel = 4
+                deconv_stride = 2
+                deconv_padding = 1
+            else:
+                deconv_kernel = cfg.CNN_KERNEL
+                deconv_stride = cfg.CNN_STRIDE
+                deconv_padding = cfg.CNN_PADDING
+
+
             self.deconv = nn.Sequential(
                 nn.ConvTranspose2d(self.latent_channels, cfg.CNN[-1],
-                                kernel_size=cfg.CNN_KERNEL,
-                                stride=cfg.CNN_STRIDE,
-                                padding=cfg.CNN_PADDING),
+                    kernel_size=(deconv_kernel, 1),    # kernel alto, estrecho
+                    stride=(deconv_stride, 1),
+                    padding=(deconv_padding, 0),
+                    # output_padding=(0, 0)
+                ),
                 nn.LeakyReLU(0.2),
+
                 nn.ConvTranspose2d(cfg.CNN[-1], cfg.CNN[-2],
-                                kernel_size=cfg.CNN_KERNEL,
-                                stride=cfg.CNN_STRIDE,
-                                padding=cfg.CNN_PADDING),
+                    kernel_size=(deconv_kernel, 1),
+                    stride=(deconv_stride, 1),
+                    padding=(deconv_padding, 0),
+                    # output_padding=(0, 0)
+                ),
                 nn.LeakyReLU(0.2),
+
                 nn.ConvTranspose2d(cfg.CNN[-2], cfg.CNN[0],
-                                kernel_size=cfg.CNN_KERNEL,
-                                stride=cfg.CNN_STRIDE,
-                                padding=cfg.CNN_PADDING,
-                                output_padding=(0, 1)),
+                    kernel_size=(deconv_kernel, 1),
+                    stride=(deconv_stride, 1),
+                    padding=(deconv_padding, 0),
+                    # output_padding=(0, 0)
+                ),
                 nn.Tanh()
             )
 
@@ -94,13 +111,13 @@ class GAN(nn.Module):
 
             self.genre_embedding = nn.Embedding(cfg.NUM_GENRES, cfg.GENRE_EMBED_DIM)
 
-            self.conv1 = nn.Conv2d(1 + cfg.GENRE_EMBED_DIM, 64, kernel_size=cfg.CNN_KERNEL, padding=cfg.CNN_PADDING)
+            self.conv1 = nn.Conv2d(1 + cfg.GENRE_EMBED_DIM, 64, kernel_size=(cfg.CNN_KERNEL,1), padding=(cfg.CNN_PADDING, 0))
             self.bn1 = nn.BatchNorm2d(64)
 
-            self.conv2 = nn.Conv2d(64, 128, kernel_size=cfg.CNN_KERNEL, padding=cfg.CNN_PADDING)
+            self.conv2 = nn.Conv2d(64, 128, kernel_size=(cfg.CNN_KERNEL,1), padding=(cfg.CNN_PADDING, 0))
             self.bn2 = nn.BatchNorm2d(128)
 
-            self.conv3 = nn.Conv2d(128, 256, kernel_size=cfg.CNN_KERNEL, padding=cfg.CNN_PADDING)
+            self.conv3 = nn.Conv2d(128, 256, kernel_size=(cfg.CNN_KERNEL,1), padding=(cfg.CNN_PADDING, 0))
             self.bn3 = nn.BatchNorm2d(256)
 
             self.pool = nn.MaxPool2d(kernel_size=2)
@@ -144,7 +161,7 @@ class GAN(nn.Module):
             if self.current_epoch < cfg.GAN_PRETRAIN_EPOCHS_G:
                 z = torch.randn(
                     batch_size,
-                    cfg.LATENT_CHANNELS,
+                    cfg.LATENT_DIM,
                     cfg.SPEC_ROWS // (2 ** (len(cfg.CNN) - 1)),
                     cfg.SPEC_COLS // (2 ** (len(cfg.CNN) - 1)),
                     device=self.device
@@ -179,7 +196,6 @@ class GAN(nn.Module):
 
     def __init__(self):
         super().__init__()
-        cfg.LATENT_DIM = cfg.LATENT_DIM
         cfg.SPEC_TIME_STEPS = cfg.SPEC_TIME_STEPS
         self.automatic_optimization = False
         self.generator = self.GAN_Generator()

@@ -50,13 +50,13 @@ class Config(object):
     # CNN_KERNEL=4
     # CNN_STRIDE=2
     # CNN_PADDING=1
-    # LATENT_CHANNELS = 16
+    # LATENT_DIM = 16
     # LSTM_HIDDEN_SIZE = 256#128
     # LSTM_NUM_LAYERS = 2
 
     CNN = [1, 64, 128, 256] # be careful: it must always starts with 1
-    LATENT_CHANNELS = 32
-    LSTM_HIDDEN_SIZE = 512
+    LATENT_DIM = 32
+    LSTM_HIDDEN_SIZE = 2048
     CNN_KERNEL = 3
     CNN_STRIDE = 2
     CNN_PADDING = 1
@@ -69,10 +69,23 @@ class Config(object):
     DB_MIN = int(os.environ.get('DB_MIN'))
     DB_MAX = int(os.environ.get('DB_MAX'))
 
+    KIND_OF_SPECTROGRAM = os.environ.get('KIND_OF_SPECTROGRAM')
+    NUM_MELS=256
 
     LEARNING_RATE = 0.0001
     LR_SCHEDULER_PATIENTE = 6
     LR_SCHEDULER_FACTOR = 0.5
+
+    GEN_MODEL_DIM = int(os.environ.get('GEN_MODEL_DIM'))
+    GEN_NUM_LAYERS = int(os.environ.get('GEN_NUM_LAYERS'))
+    GEN_NUM_HEADS = int(os.environ.get('GEN_NUM_HEADS'))
+    GAN_PRETRAIN_EPOCHS_D = int(os.environ.get('GAN_PRETRAIN_EPOCHS_D'))
+    GAN_PRETRAIN_EPOCHS_G = int(os.environ.get('GAN_PRETRAIN_EPOCHS_G'))
+    GAN_BETA_MIN = float(os.environ.get('GAN_BETA_MIN'))
+    GAN_BETA_MAX = float(os.environ.get('GAN_BETA_MAX'))
+
+    BETA_MAX = float(os.environ.get('BETA_MAX'))
+    BETA_WARMUP_EPOCHS = int(os.environ.get('BETA_WARMUP_EPOCHS'))
 
     def __new__(cls):
         if cls._instance is None:
@@ -81,20 +94,14 @@ class Config(object):
         return cls._instance
 
     def __init_config__(self):
-        self.SEGMENT_DURATION=10
+        self.SEGMENT_DURATION=25
         self.N_FFT = 2048
         self.HOP_LENGTH = self.N_FFT // 4
-        self.SPEC_ROWS = self.N_FFT // 2 + 1
+        if self.KIND_OF_SPECTROGRAM == 'MEL':
+            self.SPEC_ROWS = 256
+        else:
+            self.SPEC_ROWS = self.N_FFT // 2 + 1
+
         self.SPEC_COLS = int(self.SAMPLE_RATE * self.SEGMENT_DURATION / self.HOP_LENGTH)
         self.SPEC_TIME_STEPS = int(self.SAMPLE_RATE * self.SEGMENT_DURATION / self.HOP_LENGTH)
 
-        self.GEN_MODEL_DIM = int(os.environ.get('GEN_MODEL_DIM'))
-        self.GEN_NUM_LAYERS = int(os.environ.get('GEN_NUM_LAYERS'))
-        self.GEN_NUM_HEADS = int(os.environ.get('GEN_NUM_HEADS'))
-        self.GAN_PRETRAIN_EPOCHS_D = int(os.environ.get('GAN_PRETRAIN_EPOCHS_D'))
-        self.GAN_PRETRAIN_EPOCHS_G = int(os.environ.get('GAN_PRETRAIN_EPOCHS_G'))
-        self.GAN_BETA_MIN = int(os.environ.get('GAN_BETA_MIN'))
-        self.GAN_BETA_MAX = int(os.environ.get('GAN_BETA_MAX'))
-
-        self.BETA_MAX = float(os.environ.get('BETA_MAX'))
-        self.BETA_WARMUP_EPOCHS = int(os.environ.get('BETA_WARMUP_EPOCHS'))

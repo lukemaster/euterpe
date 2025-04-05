@@ -35,6 +35,7 @@ class VAEAIModelWrapper(AIModel):
     def __init__(self, model):
         super().__init__()
         self.model = model
+        self.model.apply(model.init_weights)
         self.model_name = "VAE"
         self.register_buffer("mean_x_buffer", torch.tensor(0.0))
         self.register_buffer("std_x_buffer", torch.tensor(1.0))
@@ -63,18 +64,38 @@ class VAEAIModelWrapper(AIModel):
         # beta = float(cfg.BETA_MAX / (1 + math.exp(-10 * (step - 0.5))))
         ##
         # beta = min(beta, cfg.BETA_MAX)
-        if self.global_step < self.total_steps * 0.3:
-            beta = cfg.BETA_MAX * self.global_step / (self.total_steps * 0.3)
-        else:
-            beta = cfg.BETA_MAX
+        ##
+        # if self.global_step < self.total_steps * 0.3:
+        #     beta = cfg.BETA_MAX * self.global_step / (self.total_steps * 0.3)
+        # else:
+        #     beta = cfg.BETA_MAX
         ##
         # beta = 1
+        ##
+        # step = self.global_step / self.total_steps
+        # beta = cfg.BETA_MAX * min(1.0, step / 0.5)  # Lineal hasta 50%
+        ##
+        # import math
+        # step = self.global_step / self.total_steps
+        # beta = cfg.BETA_MAX / (1 + math.exp(-10 * (step - 0.5)))
+        ##
+        import math
+        t = self.global_step / self.total_steps
+        beta = 1 + (2 - 1) * (1 / (1 + math.exp(-10.0 * (t - 0.5))))
+
         
 
         recon_loss = F.mse_loss(x_hat, x, reduction='mean')
+        ##
         kl_div = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp()) / x.size(0)
+        ##
+        # beta = 1
+        # free_bits = 0.1
+        # kl_elementwise = -0.5 * (1 + logvar - mu.pow(2) - logvar.exp())
+        # kl_div = torch.sum(torch.maximum(kl_elementwise, torch.tensor(free_bits).to(mu.device))) / mu.size(0)
+        ##
         loss = recon_loss + beta * kl_div
-        return loss, recon_loss, kl_div, 1
+        return loss, recon_loss, kl_div, beta
 
     def training_step(self, batch, batch_idx):
         x, genre = batch
@@ -89,9 +110,26 @@ class VAEAIModelWrapper(AIModel):
 
         loss, recon_loss, kl_div, beta = self.compute_loss(x_hat, x, mu, logvar)
         
-        global_step = self.global_step
+        
 
-        if global_step % 500 == 0:
+        assert x.min() >= -1.01 and x.max() <= 1.01, "Input x out of bounds"
+        assert x_hat.min() >= -1.01 and x_hat.max() <= 1.01, "x_hat out of bounds"
+
+        if self.global_step % 50 == 0:
+            x_min = x.min().item()
+            x_max = x.max().item()
+            x_hat_min = x_hat.min().item()
+            x_hat_max = x_hat.max().item()
+
+            if not (-1.01 <= x_min <= 1.01 and -1.01 <= x_max <= 1.01):
+                print(f"[WARNING] Input x out of range: min={x_min:.3f}, max={x_max:.3f}")
+            if not (-1.01 <= x_hat_min <= 1.01 and -1.01 <= x_hat_max <= 1.01):
+                print(f"[WARNING] Reconstruction x_hat out of range: min={x_hat_min:.3f}, max={x_hat_max:.3f}")
+            else:
+                print(f"[DEBUG] x ∈ [{x_min:.3f}, {x_max:.3f}], x_hat ∈ [{x_hat_min:.3f}, {x_hat_max:.3f}]")
+
+
+        # if self.global_step % 500 == 0:
             print(f"[DEBUG] KL={kl_div:.4f} | Recon Loss={recon_loss:.4f} | mu mean={mu.mean().item():.4f} std={mu.std().item():.4f}")
 
             base_dir = "training_debug"
@@ -110,16 +148,23 @@ class VAEAIModelWrapper(AIModel):
             spec_recon = (spec_recon + 1) / 2 * (cfg.DB_MAX - cfg.DB_MIN) + cfg.DB_MIN
 
             _, axs = plt.subplots(1, 2, figsize=(10, 4))
-            axs[0].imshow(spec_real, aspect='auto', origin='lower', cmap='magma')
-            axs[0].set_title('Original')
-            axs[1].imshow(spec_recon, aspect='auto', origin='lower', cmap='magma')
-            axs[1].set_title('Reconstructed')
-            for ax in axs:
-                ax.set_xlabel('Time')
-                ax.set_ylabel('Frequence')
-            plt.tight_layout()
 
-            fname = os.path.join(recon_dir, f"recon_step_{global_step}.jpg")
+            for ax, spec, title in zip(axs, [spec_real, spec_recon], ['Original', 'Reconstructed']):
+                if cfg.KIND_OF_SPECTROGRAM == 'MEL':
+                    extent = [0, spec.shape[1], 0, cfg.SAMPLE_RATE // 2]
+                    ax.imshow(spec, aspect='auto', origin='lower', cmap='magma', extent=extent)
+                    ax.set_ylabel('Mel scale')
+                else:  # STFT
+                    freqs = np.linspace(0, cfg.SAMPLE_RATE // 2, spec.shape[0])
+                    extent = [0, spec.shape[1], freqs[0], freqs[-1]]
+                    ax.imshow(spec, aspect='auto', origin='lower', cmap='magma', extent=extent)
+                    ax.set_ylabel('Frequency (Hz)')
+
+                ax.set_title(title)
+                ax.set_xlabel('Time frames')
+
+            plt.tight_layout()
+            fname = os.path.join(recon_dir, f"recon_step_{self.global_step}.jpg")
             plt.savefig(fname)
             plt.close()
             print(f"[DEBUG] Reconstruction saved in {fname}")
@@ -127,11 +172,11 @@ class VAEAIModelWrapper(AIModel):
             mu_np = mu.detach().cpu().numpy().flatten()
             plt.figure(figsize=(6, 4))
             plt.hist(mu_np, bins=100, color="skyblue", edgecolor="black")
-            plt.title(f"mu Histogram - step {global_step}")
+            plt.title(f"mu Histogram - step {self.global_step}")
             plt.xlabel("Value")
-            plt.ylabel("Frequence")
+            plt.ylabel("Frequency")
             plt.tight_layout()
-            mu_fname = os.path.join(mu_hist_dir, f"mu_hist_step_{global_step}.png")
+            mu_fname = os.path.join(mu_hist_dir, f"mu_hist_step_{self.global_step}.png")
             plt.savefig(mu_fname)
             plt.close()
             print(f"[DEBUG] mu histogram saved in {mu_fname}")
@@ -139,14 +184,15 @@ class VAEAIModelWrapper(AIModel):
             logvar_np = logvar.detach().cpu().numpy().flatten()
             plt.figure(figsize=(6, 4))
             plt.hist(logvar_np, bins=100, color="salmon", edgecolor="black")
-            plt.title(f"logvar histogram - step {global_step}")
+            plt.title(f"logvar histogram - step {self.global_step}")
             plt.xlabel("Value")
-            plt.ylabel("Frequence")
+            plt.ylabel("Frequency")
             plt.tight_layout()
-            logvar_fname = os.path.join(logvar_hist_dir, f"logvar_hist_step_{global_step}.png")
+            logvar_fname = os.path.join(logvar_hist_dir, f"logvar_hist_step_{self.global_step}.png")
             plt.savefig(logvar_fname)
             plt.close()
             print(f"[DEBUG] logvar  histogram saved in {logvar_fname}")
+
 
         self.log("loss", loss, prog_bar=True)
         self.log("recon_loss", recon_loss, prog_bar=True)

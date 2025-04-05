@@ -20,7 +20,7 @@
 from torch.utils.data import random_split, DataLoader
 import pytorch_lightning as pl
 
-class VAEDataModule(pl.LightningDataModule):
+class LitDataModule(pl.LightningDataModule):
     def __init__(self, dataset_cls=None, dataset_kwargs=None,train_dataset=None,val_dataset=None, val_split=0.2, batch_size=1, num_workers=0):
         super().__init__()
         self.dataset_cls = dataset_cls
