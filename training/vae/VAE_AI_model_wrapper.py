@@ -125,12 +125,7 @@ class VAEAIModelWrapper(AIModel):
         self.x_squared_sum += (x ** 2).sum()
         self.x_count += x.numel()
 
-        for i in range(x.size(0)):
-            self.update_genre_limits(genre[i].item(), x[i])
-
         loss, recon_loss, kl_div, beta = self.compute_loss(x_hat, x, mu, logvar)
-        
-        
 
         assert x.min() >= -1.01 and x.max() <= 1.01, "Input x out of bounds"
         assert x_hat.min() >= -1.01 and x_hat.max() <= 1.01, "x_hat out of bounds"
@@ -314,8 +309,6 @@ class VAEAIModelWrapper(AIModel):
                 self.best_val_loss = current_val_loss
                 torch.save(self.state_dict(), os.path.join(self.ckpt_dir, "vae_best.pt"))
                 print(f"[INFO] New best model saved (val_loss={current_val_loss:.4f})")
-
-        self.save_genre_limits()
 
     def on_validation_epoch_end(self):
         if self.val_step_metrics:

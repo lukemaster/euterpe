@@ -44,9 +44,6 @@ class AIModel(pl.LightningModule):
         self.mean_x = 0
         self.best_val_loss = float('inf')
 
-        self.genre_db_limits_path = 'logs/genre_db_limits.json'
-        self.genre_db_limits = self.load_or_init_genre_limits()
-
         self.train_step_metrics = []
         self.val_step_metrics = []
         self.train_epoch_metrics = []
@@ -59,29 +56,6 @@ class AIModel(pl.LightningModule):
 
         if cfg.debug:
             print(f"[DEBUG] Total training steps: {self.total_steps}")
-
-    def load_or_init_genre_limits(self):
-        if os.path.exists(self.genre_db_limits_path):
-            with open(self.genre_db_limits_path, 'r') as f:
-                return json.load(f)
-        return {str(i): [100.0, -100.0] for i in range(cfg.NUM_GENRES)}
-
-    def update_genre_limits(self, genre_id, spec):
-        spec_db = 20 * torch.log10(torch.clamp(spec, min=1e-5)).cpu().numpy()
-        min_db = float(np.min(spec_db))
-        max_db = float(np.max(spec_db))
-        g = str(genre_id)
-        if g not in self.genre_db_limits:
-            self.genre_db_limits[g] = [min_db, max_db]
-        else:
-            current_min, current_max = self.genre_db_limits[g]
-            self.genre_db_limits[g][0] = min(current_min, min_db)
-            self.genre_db_limits[g][1] = max(current_max, max_db)
-
-    def save_genre_limits(self):
-        with open(self.genre_db_limits_path, 'w') as f:
-            json.dump(self.genre_db_limits, f, indent=2)
-
 
     def clean_spec(self, spec, umbral_relativo=0.1):
         print(spec.shape)
