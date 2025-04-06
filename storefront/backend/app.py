@@ -27,7 +27,7 @@ from typing import Dict, TypedDict
 import torch
 
 from flask_cors import CORS
-from flask import Flask, request, jsonify, Response, send_file, after_this_request
+from flask import Flask, request, jsonify, Response, send_file
 
 from generator.generator import MusicGenerator  # GAN real o dummy
 
@@ -37,7 +37,7 @@ CORS(app, resources={r"/api/*": {"origins": "http://localhost:5173"}})
 generator = MusicGenerator()
 generator.eval()
 
-csv.field_size_limit(10**8)  # aumenta a ~100 MB por campo
+csv.field_size_limit(10**8)
 CSV_PATH = 'register.csv'
 
 genres_arr = ['hip-hop','jazz','rock','pop','blues']
@@ -82,15 +82,6 @@ def generar() -> Response:
     
     track_id = str(uuid.uuid4())
     generation_register(track_id, genre, csv_string, track_name)
-
-    # @after_this_request TODO
-    # def remove_file(response):
-    #     try:
-    #         os.remove(file_path)
-    #     except Exception as e:
-    #         print(f"{file_path}: {e}")
-    #     return response
-
 
     response = send_file(
         mp3_io,
