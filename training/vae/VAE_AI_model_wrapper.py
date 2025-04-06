@@ -17,14 +17,15 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import os
+import json
 import numpy as np
-
 import torch
 import torch.nn.functional as F
-
-
 import pandas as pd
 import matplotlib.pyplot as plt
+from datetime import datetime
+from contextlib import redirect_stdout
+from torchsummary import summary
 
 from training.AI_model import AIModel
 from training.config import Config
@@ -35,12 +36,33 @@ class VAEAIModelWrapper(AIModel):
     def __init__(self, model):
         super().__init__()
         self.model = model
+        self.model.apply(model.init_weights)
+        self.model_name = "VAE"
         self.register_buffer("mean_x_buffer", torch.tensor(0.0))
         self.register_buffer("std_x_buffer", torch.tensor(1.0))
 
-        os.makedirs("logs/csv", exist_ok=True)
-        os.makedirs("logs/img", exist_ok=True)
-        os.makedirs("checkpoints", exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+        self.base_log_dir = os.path.join("logs", f"{timestamp}_{self.model_name}_{cfg.KIND_OF_SPECTROGRAM}")
+        self.csv_dir = os.path.join(self.base_log_dir, "csv")
+        self.img_dir = os.path.join(self.base_log_dir, "img")
+        self.ckpt_dir = os.path.join(self.base_log_dir, "checkpoints")
+        self.samples_dir = os.path.join(self.base_log_dir, "samples")
+
+        os.makedirs(self.csv_dir, exist_ok=True)
+        os.makedirs(self.img_dir, exist_ok=True)
+        os.makedirs(self.ckpt_dir, exist_ok=True)
+        os.makedirs(self.samples_dir, exist_ok=True)
+
+        with open(os.path.join(self.base_log_dir, "config.json"), "w") as f:
+            json.dump(cfg.__dict__, f, indent=4)
+
+        summary_path = os.path.join(self.base_log_dir, "model_summary.txt")
+        with open(summary_path, "w") as f:
+            with redirect_stdout(f):
+                print("=== Encoder ===")
+                print(self.model.encoder)
+                print("\n=== Decoder ===")
+                print(self.model.decoder)
     
     def forward(self, x, genre):
         x = x[..., :cfg.SPEC_TIME_STEPS]
@@ -62,18 +84,38 @@ class VAEAIModelWrapper(AIModel):
         # beta = float(cfg.BETA_MAX / (1 + math.exp(-10 * (step - 0.5))))
         ##
         # beta = min(beta, cfg.BETA_MAX)
-        if self.global_step < self.total_steps * 0.3:
-            beta = cfg.BETA_MAX * self.global_step / (self.total_steps * 0.3)
-        else:
-            beta = cfg.BETA_MAX
+        ##
+        # if self.global_step < self.total_steps * 0.3:
+        #     beta = cfg.BETA_MAX * self.global_step / (self.total_steps * 0.3)
+        # else:
+        #     beta = cfg.BETA_MAX
         ##
         # beta = 1
+        ##
+        # step = self.global_step / self.total_steps
+        # beta = cfg.BETA_MAX * min(1.0, step / 0.5)  # Lineal hasta 50%
+        ##
+        # import math
+        # step = self.global_step / self.total_steps
+        # beta = cfg.BETA_MAX / (1 + math.exp(-10 * (step - 0.5)))
+        ##
+        import math
+        t = self.global_step / self.total_steps
+        beta = 1 + (2 - 1) * (1 / (1 + math.exp(-10.0 * (t - 0.5))))
+
         
 
         recon_loss = F.mse_loss(x_hat, x, reduction='mean')
+        ##
         kl_div = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp()) / x.size(0)
+        ##
+        # beta = 1
+        # free_bits = 0.1
+        # kl_elementwise = -0.5 * (1 + logvar - mu.pow(2) - logvar.exp())
+        # kl_div = torch.sum(torch.maximum(kl_elementwise, torch.tensor(free_bits).to(mu.device))) / mu.size(0)
+        ##
         loss = recon_loss + beta * kl_div
-        return loss, recon_loss, kl_div, 1
+        return loss, recon_loss, kl_div, beta
 
     def training_step(self, batch, batch_idx):
         x, genre = batch
@@ -83,14 +125,26 @@ class VAEAIModelWrapper(AIModel):
         self.x_squared_sum += (x ** 2).sum()
         self.x_count += x.numel()
 
-        for i in range(x.size(0)):
-            self.update_genre_limits(genre[i].item(), x[i])
-
         loss, recon_loss, kl_div, beta = self.compute_loss(x_hat, x, mu, logvar)
-        
-        global_step = self.global_step
 
-        if global_step % 500 == 0:
+        assert x.min() >= -1.01 and x.max() <= 1.01, "Input x out of bounds"
+        assert x_hat.min() >= -1.01 and x_hat.max() <= 1.01, "x_hat out of bounds"
+
+        if self.global_step % 50 == 0:
+            x_min = x.min().item()
+            x_max = x.max().item()
+            x_hat_min = x_hat.min().item()
+            x_hat_max = x_hat.max().item()
+
+            if not (-1.01 <= x_min <= 1.01 and -1.01 <= x_max <= 1.01):
+                print(f"[WARNING] Input x out of range: min={x_min:.3f}, max={x_max:.3f}")
+            if not (-1.01 <= x_hat_min <= 1.01 and -1.01 <= x_hat_max <= 1.01):
+                print(f"[WARNING] Reconstruction x_hat out of range: min={x_hat_min:.3f}, max={x_hat_max:.3f}")
+            else:
+                print(f"[DEBUG] x ∈ [{x_min:.3f}, {x_max:.3f}], x_hat ∈ [{x_hat_min:.3f}, {x_hat_max:.3f}]")
+
+
+        # if self.global_step % 500 == 0:
             print(f"[DEBUG] KL={kl_div:.4f} | Recon Loss={recon_loss:.4f} | mu mean={mu.mean().item():.4f} std={mu.std().item():.4f}")
 
             base_dir = "training_debug"
@@ -109,16 +163,23 @@ class VAEAIModelWrapper(AIModel):
             spec_recon = (spec_recon + 1) / 2 * (cfg.DB_MAX - cfg.DB_MIN) + cfg.DB_MIN
 
             _, axs = plt.subplots(1, 2, figsize=(10, 4))
-            axs[0].imshow(spec_real, aspect='auto', origin='lower', cmap='magma')
-            axs[0].set_title('Original')
-            axs[1].imshow(spec_recon, aspect='auto', origin='lower', cmap='magma')
-            axs[1].set_title('Reconstructed')
-            for ax in axs:
-                ax.set_xlabel('Time')
-                ax.set_ylabel('Frequence')
-            plt.tight_layout()
 
-            fname = os.path.join(recon_dir, f"recon_step_{global_step}.jpg")
+            for ax, spec, title in zip(axs, [spec_real, spec_recon], ['Original', 'Reconstructed']):
+                if cfg.KIND_OF_SPECTROGRAM == 'MEL':
+                    extent = [0, spec.shape[1], 0, cfg.SAMPLE_RATE // 2]
+                    ax.imshow(spec, aspect='auto', origin='lower', cmap='magma', extent=extent)
+                    ax.set_ylabel('Mel scale')
+                else:  # STFT
+                    freqs = np.linspace(0, cfg.SAMPLE_RATE // 2, spec.shape[0])
+                    extent = [0, spec.shape[1], freqs[0], freqs[-1]]
+                    ax.imshow(spec, aspect='auto', origin='lower', cmap='magma', extent=extent)
+                    ax.set_ylabel('Frequency (Hz)')
+
+                ax.set_title(title)
+                ax.set_xlabel('Time frames')
+
+            plt.tight_layout()
+            fname = os.path.join(recon_dir, f"recon_step_{self.global_step}.jpg")
             plt.savefig(fname)
             plt.close()
             print(f"[DEBUG] Reconstruction saved in {fname}")
@@ -126,11 +187,11 @@ class VAEAIModelWrapper(AIModel):
             mu_np = mu.detach().cpu().numpy().flatten()
             plt.figure(figsize=(6, 4))
             plt.hist(mu_np, bins=100, color="skyblue", edgecolor="black")
-            plt.title(f"mu Histogram - step {global_step}")
+            plt.title(f"mu Histogram - step {self.global_step}")
             plt.xlabel("Value")
-            plt.ylabel("Frequence")
+            plt.ylabel("Frequency")
             plt.tight_layout()
-            mu_fname = os.path.join(mu_hist_dir, f"mu_hist_step_{global_step}.png")
+            mu_fname = os.path.join(mu_hist_dir, f"mu_hist_step_{self.global_step}.png")
             plt.savefig(mu_fname)
             plt.close()
             print(f"[DEBUG] mu histogram saved in {mu_fname}")
@@ -138,14 +199,15 @@ class VAEAIModelWrapper(AIModel):
             logvar_np = logvar.detach().cpu().numpy().flatten()
             plt.figure(figsize=(6, 4))
             plt.hist(logvar_np, bins=100, color="salmon", edgecolor="black")
-            plt.title(f"logvar histogram - step {global_step}")
+            plt.title(f"logvar histogram - step {self.global_step}")
             plt.xlabel("Value")
-            plt.ylabel("Frequence")
+            plt.ylabel("Frequency")
             plt.tight_layout()
-            logvar_fname = os.path.join(logvar_hist_dir, f"logvar_hist_step_{global_step}.png")
+            logvar_fname = os.path.join(logvar_hist_dir, f"logvar_hist_step_{self.global_step}.png")
             plt.savefig(logvar_fname)
             plt.close()
             print(f"[DEBUG] logvar  histogram saved in {logvar_fname}")
+
 
         self.log("loss", loss, prog_bar=True)
         self.log("recon_loss", recon_loss, prog_bar=True)
@@ -198,67 +260,69 @@ class VAEAIModelWrapper(AIModel):
         self.x_count.zero_()
 
         if self.train_step_metrics:
+            for row in self.train_step_metrics:
+                row["model_name"] = self.model_name
             df_train = pd.DataFrame(self.train_step_metrics)
-            df_train.to_csv("logs/csv/metrics_train_step.csv", mode='a', header=not os.path.exists("logs/csv/metrics_train_step.csv"), index=False)
+            df_train.to_csv(os.path.join(self.csv_dir, "metrics_train_step.csv"), mode='a', header=not os.path.exists(os.path.join(self.csv_dir, "metrics_train_step.csv")), index=False)
             self.train_step_metrics.clear()
 
         if self.val_step_metrics:
+            for row in self.val_step_metrics:
+                row["model_name"] = self.model_name
             df_val = pd.DataFrame(self.val_step_metrics)
-            df_val.to_csv("logs/csv/metrics_val_step.csv", mode='a', header=not os.path.exists("logs/csv/metrics_val_step.csv"), index=False)
+            df_val.to_csv(os.path.join(self.csv_dir, "metrics_val_step.csv"), mode='a', header=not os.path.exists(os.path.join(self.csv_dir, "metrics_val_step.csv")), index=False)
             self.val_step_metrics.clear()
 
-        epoch_metrics = {
+        train_metrics_epoch = {
             "epoch": self.current_epoch,
             "x_mean": self.mean_x,
-            "x_std": self.std_x
+            "x_std": self.std_x,
+            "model_name": self.model_name
         }
-        self.train_epoch_metrics.append(epoch_metrics)
+
+        if len(self.train_step_metrics):
+            df_tmp = pd.DataFrame(self.train_step_metrics)
+            for key in ["loss", "recon_loss", "kl_div", "beta"]:
+                train_metrics_epoch[f"{key}"] = df_tmp[key].mean()
+
+        self.train_epoch_metrics.append(train_metrics_epoch)
         df_epoch = pd.DataFrame(self.train_epoch_metrics)
-        df_epoch.to_csv("logs/csv/metrics_train_epoch.csv", index=False)
+        df_epoch.to_csv(os.path.join(self.csv_dir, "metrics_train_epoch.csv"), index=False)
 
         if self.val_epoch_metrics:
             df_val_epoch = pd.DataFrame(self.val_epoch_metrics)
-            df_val_epoch.to_csv("logs/csv/metrics_val_epoch.csv", index=False)
+            df_val_epoch.to_csv(os.path.join(self.csv_dir, "metrics_val_epoch.csv"), index=False)
 
-        extra = {
-            "mean_x": self.mean_x,
-            "std_x": self.std_x
-        }
+        current_lr = self.trainer.optimizers[0].param_groups[0]["lr"]
+        lr_data = pd.DataFrame([{
+            "epoch": self.current_epoch,
+            "lr": current_lr,
+            "model_name": self.model_name
+        }])
+        lr_data.to_csv(os.path.join(self.csv_dir, "metrics_lr.csv"), mode='a', header=not os.path.exists(os.path.join(self.csv_dir, "metrics_lr.csv")), index=False)
 
-        if len(df_epoch) > 1:
-            plt.figure()
-            plt.plot(df_epoch["epoch"], df_epoch["x_mean"], label="x_mean")
-            plt.plot(df_epoch["epoch"], df_epoch["x_std"], label="x_std")
-            plt.xlabel("Epoch")
-            plt.ylabel("Valor")
-            plt.legend()
-            plt.title("x mean and std")
-            plt.savefig(f"logs/img/stats_epoch_{self.current_epoch}.jpg")
-            plt.close()
-
-        torch.save({"model": self.state_dict(), "extra": extra}, f'''checkpoints/vae_last_{self.current_epoch}.pt''')
+        torch.save(self.state_dict(), os.path.join(self.ckpt_dir, f"vae_last_{self.current_epoch}.pt"))
 
         if self.val_epoch_metrics:
             current_val_loss = self.val_epoch_metrics[-1]["val_loss"]
             if current_val_loss < self.best_val_loss:
                 self.best_val_loss = current_val_loss
-                torch.save({"model": self.state_dict(), "extra": extra}, "checkpoints/vae_best.pt")
-                torch.save(self.state_dict(), f"checkpoints/vae_best.pt")
+                torch.save(self.state_dict(), os.path.join(self.ckpt_dir, "vae_best.pt"))
                 print(f"[INFO] New best model saved (val_loss={current_val_loss:.4f})")
-
-        self.save_genre_limits()
 
     def on_validation_epoch_end(self):
         if self.val_step_metrics:
-            val_g_losses = [m["val_g_loss"] for m in self.val_step_metrics if "val_g_loss" in m]
-            val_d_losses = [m["val_d_loss"] for m in self.val_step_metrics if "val_d_loss" in m]
-            if val_g_losses and val_d_losses:
-                self.val_epoch_metrics.append({
-                    "epoch": self.current_epoch,
-                    "val_g_loss": float(np.mean(val_g_losses)),
-                    "val_d_loss": float(np.mean(val_d_losses))
-                })
-    
+            val_epoch = {
+                "epoch": self.current_epoch,
+                "model_name": self.model_name
+            }
+            keys = ["val_loss", "val_recon_loss", "val_kl_div", "beta"]
+            df_val = pd.DataFrame(self.val_step_metrics)
+            for key in keys:
+                if key in df_val:
+                    val_epoch[key] = df_val[key].mean()
+            self.val_epoch_metrics.append(val_epoch)
+
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=cfg.LEARNING_RATE)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", patience=cfg.LR_SCHEDULER_PATIENTE, factor=cfg.LR_SCHEDULER_FACTOR, verbose=True)

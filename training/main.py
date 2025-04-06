@@ -32,7 +32,7 @@ from pytorch_lightning import Trainer
 
 from training.datasources.fma_datasource import FMADatasource
 from training.datasets.mp3_validator import MP3ValidatorDataset
-from training.datasets.lit_data_module import VAEDataModule
+from training.datasets.lit_data_module import LitDataModule
 
 from training.gan.gan import GAN
 from training.vae.vae import VAE
@@ -73,7 +73,7 @@ def get_dataloader(datasets_path, valid_files_csv_path):# TODO: integration insi
 def get_data_module(datasets_path, valid_files_csv_path):
     _, dataset = get_dataloader(datasets_path, valid_files_csv_path)
 
-    data_module = VAEDataModule(
+    data_module = LitDataModule(
         train_dataset=dataset,
         val_split=0.2,
         batch_size=cfg.TRAIN_BATCH_SIZE,
@@ -125,6 +125,24 @@ def generate_audio_vae(model_path, genre_id):
 
     
     model.generate_audio_from_noise(genre_id, output_path=f'''sample_genre{genre_id}.wav''')
+    datasets_path = '/home/luke/VIU/09MIAR/datasets'
+    valid_files_csv_path = '/home/luke/valid_files.csv'
+
+    dataloader, dataset = get_dataloader(datasets_path,valid_files_csv_path)
+    
+    model.generate_audio_from_mu(next(iter(dataloader))[0], genre_id, output_path=f'''sample_genre{genre_id}_mu.wav''')
+    model.generate_audio_from_scaled_z(next(iter(dataloader))[0], genre_id, output_path=f'''sample_genre{genre_id}_mu.wav''')
+    sample1 = next(iter(dataloader))[0]  # género 0
+    sample2 = next(iter(dataloader))[0]  # género 1
+
+    model.interpolate_between_samples(sample1, 0, sample2, 1, alpha=0.1)
+    sample, _ = next(iter(dataloader))
+    model.generate_audio_from_scaled_z(sample, genre_id=0, scale=4.0)
+    model.generate_audio_from_scaled_z(sample, genre_id=0, scale=3.0)
+    model.generate_audio_from_scaled_z(sample, genre_id=0, scale=2.0)
+    model.generate_audio_from_scaled_z(sample, genre_id=0, scale=1.0)
+
+    
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Example usage: python main.py datasets_path valid_files_csv_path model_to_train')

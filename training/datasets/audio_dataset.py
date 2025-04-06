@@ -107,15 +107,25 @@ class AudioDataset(Dataset):
 
             self.SPEC_TIME_STEPS = int((segment_samples + 2 * pad_len) / self.HOP_LENGTH) + 1
 
-            D = librosa.stft(y_segment, n_fft=self.N_FFT, hop_length=self.HOP_LENGTH)
-            S = np.abs(D)
-            S_db = librosa.amplitude_to_db(S, ref=np.max)
+            if cfg.KIND_OF_SPECTROGRAM == 'MEL':
+                mel = librosa.feature.melspectrogram(
+                    y=y_segment,
+                    sr=self.SAMPLE_RATE,
+                    n_fft=self.N_FFT,
+                    hop_length=self.HOP_LENGTH,
+                    n_mels=256,#TODO -> TO CFG
+                    power=2.0
+                )
+                S_db = librosa.power_to_db(mel, ref=np.max)
+            else:
+                D = librosa.stft(y_segment, n_fft=self.N_FFT, hop_length=self.HOP_LENGTH)
+                S = np.abs(D)
+                S_db = librosa.amplitude_to_db(S, ref=np.max)
 
             S_db = np.clip(S_db, cfg.DB_MIN, cfg.DB_MAX)
 
             segment_spec = torch.tensor(S_db).unsqueeze(0).float()
             segment_spec = (segment_spec - cfg.DB_MIN) / (cfg.DB_MAX - cfg.DB_MIN)
-            
             segment_spec = segment_spec * 2 - 1  # [-1, 1]
 
             if segment_spec.shape[-1] < self.SPEC_TIME_STEPS:

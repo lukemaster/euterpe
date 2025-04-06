@@ -37,21 +37,20 @@ class VAE(nn.Module):
 
             for out_channels in cfg.CNN[1:]:
                 layers.append(nn.Conv2d(current_channels, out_channels,
-                                        kernel_size=cfg.CNN_KERNEL,
-                                        stride=cfg.CNN_STRIDE,
-                                        padding=cfg.CNN_PADDING))
+                                        kernel_size=(cfg.CNN_KERNEL, 1),
+                                        stride=(cfg.CNN_STRIDE, 1),
+                                        padding=(cfg.CNN_PADDING, 0)))
                 layers.append(nn.BatchNorm2d(out_channels))
                 layers.append(nn.ReLU(inplace=True))
                 current_channels = out_channels
 
             self.encoder = nn.Sequential(*layers)
-
             self.genre_embedding = nn.Embedding(cfg.NUM_GENRES, cfg.GENRE_EMBED_DIM)
 
             self.conv_mu = nn.Conv2d(current_channels + cfg.GENRE_EMBED_DIM,
-                                    cfg.LATENT_CHANNELS, kernel_size=1)
+                                    cfg.LATENT_DIM, kernel_size=1)
             self.conv_logvar = nn.Conv2d(current_channels + cfg.GENRE_EMBED_DIM,
-                                        cfg.LATENT_CHANNELS, kernel_size=1)
+                                        cfg.LATENT_DIM, kernel_size=1)
 
         def forward(self, x, genre):
             if self.debug:
@@ -72,8 +71,6 @@ class VAE(nn.Module):
 
             mu = self.conv_mu(x)
             logvar = self.conv_logvar(x)
-            # logvar = torch.clamp(logvar, min=-10, max=10)
-
 
             if self.debug:
                 print(f"[ENCODER] mu: {mu.shape}, logvar: {logvar.shape}")
@@ -95,37 +92,45 @@ class VAE(nn.Module):
                 input_size=self.input_size + cfg.GENRE_EMBED_DIM,
                 hidden_size=self.hidden_size,
                 num_layers=cfg.LSTM_NUM_LAYERS,
+                dropout=0.3,
                 batch_first=True
             )
 
             self.fc_out = nn.Linear(self.hidden_size, self.latent_channels * self.h)
 
+            if cfg.KIND_OF_SPECTROGRAM == 'MEL':
+                deconv_kernel = 4
+                deconv_stride = 2
+                deconv_padding = 1
+            else:
+                deconv_kernel = cfg.CNN_KERNEL
+                deconv_stride = cfg.CNN_STRIDE
+                deconv_padding = cfg.CNN_PADDING
+
             self.deconv = nn.Sequential(
                 nn.ConvTranspose2d(self.latent_channels, cfg.CNN[-1],
-                                kernel_size=cfg.CNN_KERNEL,
-                                stride=cfg.CNN_STRIDE,
-                                padding=cfg.CNN_PADDING),
+                    kernel_size=(deconv_kernel, 1),    # kernel alto, estrecho
+                    stride=(deconv_stride, 1),
+                    padding=(deconv_padding, 0),
+                    # output_padding=(0, 0)
+                ),
                 nn.LeakyReLU(0.2),
 
                 nn.ConvTranspose2d(cfg.CNN[-1], cfg.CNN[-2],
-                                kernel_size=cfg.CNN_KERNEL,
-                                stride=cfg.CNN_STRIDE,
-                                padding=cfg.CNN_PADDING),
+                    kernel_size=(deconv_kernel, 1),
+                    stride=(deconv_stride, 1),
+                    padding=(deconv_padding, 0),
+                    # output_padding=(0, 0)
+                ),
                 nn.LeakyReLU(0.2),
 
                 nn.ConvTranspose2d(cfg.CNN[-2], cfg.CNN[0],
-                                kernel_size=cfg.CNN_KERNEL,
-                                stride=cfg.CNN_STRIDE,
-                                padding=cfg.CNN_PADDING,
-                                output_padding=(0,1))
+                    kernel_size=(deconv_kernel, 1),
+                    stride=(deconv_stride, 1),
+                    padding=(deconv_padding, 0),
+                    # output_padding=(0, 0)
+                )
             )
-
-        def calculate_output_padding(self, in_channels, out_channels):
-            stride = cfg.CNN_STRIDE
-            kernel_size = cfg.CNN_KERNEL
-            padding = cfg.CNN_PADDING
-            
-            return (stride - 1) * self.h - stride + kernel_size - self.h
 
         def forward(self, z, genre):
             if self.debug:
@@ -163,7 +168,7 @@ class VAE(nn.Module):
             if self.debug:
                 print(f"[DECODER] Final recon: {recon.shape}")
 
-            recon = torch.tanh(recon) # [-1,1]
+            recon = torch.tanh(recon)
 
             if self.debug:
                 print(f"[DECODER] recon min: {recon.min()}, recon max: {recon.max()}")

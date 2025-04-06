@@ -26,7 +26,7 @@ import os
 from generator.generator import MusicGenerator  # GAN real o dummy
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/api/*": {"origins": "http://localhost:5173"}})
 
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///euterpe.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -55,7 +55,7 @@ class GenerarResponse(TypedDict):
 class AyudaResponse(TypedDict):
     texto: str
 
-@app.route('/api/generar', methods=['POST'])
+@app.route('/api/generate', methods=['POST'])
 def generar() -> Response:
     data: GenerarPayload = request.get_json()
     genero: str = data.get('genero', 'desconocido')
@@ -82,7 +82,7 @@ def generar() -> Response:
     return jsonify(response)
 
 @app.route('/api/valorar', methods=['POST'])
-def valorar() -> tuple[str, int]:
+def rate() -> tuple[str, int]:
     data: Dict[str, int] = request.get_json()
     solicitud: Optional[Solicitud] = Solicitud.query.get(data.get('id'))
     if solicitud:
@@ -90,22 +90,21 @@ def valorar() -> tuple[str, int]:
         db.session.commit()
     return ('', 204)
 
-@app.route('/api/ayuda')
-def ayuda() -> Response:
+@app.route('/api/help')
+def help() -> Response:
     texto = '''
     Bienvenido a Euterpe. Selecciona un género musical, pulsa Generar, escucha y valora.
     Cada pieza es única gracias al ruido aleatorio con el que se crea.
     Tus valoraciones ayudan a mejorar el sistema.
     '''
-    response: AyudaResponse = {'texto': texto.strip()}
-    return jsonify(response)
+    return jsonify({"texto": texto.strip()})
 
-@app.route('/api/generos')
-def generos() -> Response:
-    return jsonify(['jazz', 'rock', 'clásica', 'electrónica', 'lo-fi', 'ambient'])
+@app.route('/api/genres')
+def genres() -> Response:
+    return jsonify({'genres':['hip-hop','jazz','rock','pop','blues']})
 
-@app.route('/api/historial')
-def historial() -> Response:
+@app.route('/api/history')
+def history() -> Response:
     ultimas: List[Solicitud] = Solicitud.query.order_by(Solicitud.timestamp.desc()).limit(10).all()
     response = [
         {
@@ -124,4 +123,4 @@ if __name__ == '__main__':
     os.makedirs('static/generated', exist_ok=True)
     with app.app_context():
         db.create_all()
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=True)
