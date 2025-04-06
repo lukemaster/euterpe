@@ -35,47 +35,61 @@ const Button = (props: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
 
 export default function EuterpeApp(): JSX.Element {
   const [genre, setGenre] = useState<string>('')
-  const [generatedTruck, setGeneratedTruck] = useState<GeneratedTruck | null>(null)
   const [rating, setRate] = useState<number | null>(null)
   const [state, setState] = useState<'idle' | 'generating' | 'generated' | 'rated'>('idle')
   const helpRef = useRef<HTMLDivElement | null>(null)
   const [help, setHelp] = useState<string>('')
   const [availableGenres, setAvailableGenres] = useState<string[]>([])
+  const [trackId, setTrackId] = useState<string>('')
 
-  useEffect(() => {
-    fetch('/api/help')
-      .then((res) => res.json())
-      .then((data) => setHelp(data.texto))
-    fetch('/api/genres')
-      .then((res) => res.json())
-      .then((data) => setAvailableGenres(data.texto))
-  }, [])
-
-  const generateTruck = async (): Promise<void> => {
-    if (!genre) return
-    setState('generating')
-    const res = await fetch('/api/generate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ genre })
+useEffect(() => {
+  fetch('/api/help')
+    .then((res) => res.json())
+    .then((data) => setHelp(data.texto))
+  fetch('/api/genres')
+    .then((res) => res.json())
+    .then((data) => {
+      setAvailableGenres(data.genres)
     })
-    const data: GeneratedTruck = await res.json()
-    setGeneratedTruck(data)
-    setState('generated')
+}, [])
+
+const generateTruck = async (): Promise<void> => {
+  if (!genre) return
+  setState('generating')
+
+  const res = await fetch('/api/generate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ genre })
+  })
+
+  const blob = await res.blob()
+
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${genre}.mp3`
+  a.click()
+  a.remove()
+
+  const uuid = res.headers.get("X-Track-ID")
+  if(uuid) {
+    setTrackId(uuid)
   }
+  setState('generated')
+}
 
   const sendRating = async (): Promise<void> => {
-    if (!generatedTruck || rating === null) return
+    if (rating === null) return
     await fetch('/api/rate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: generatedTruck.id, rating })
+      body: JSON.stringify({ track_id: trackId, rating })
     })
     setState('rated')
     setTimeout(() => {
       setState('idle')
       setGenre('')
-      setGeneratedTruck(null)
       setRate(null)
     }, 5000)
   }
@@ -105,7 +119,7 @@ export default function EuterpeApp(): JSX.Element {
           <div className='text-xl space-y-4'>
             <p className='font-semibold'>Selecciona un género musical:</p>
             <div className='space-y-3'>
-              {availableGenres.map((g) => (
+              {availableGenres && availableGenres.map((g) => (
                 <label key={g} className='block text-lg'>
                   <input
                     type='radio'
@@ -127,10 +141,10 @@ export default function EuterpeApp(): JSX.Element {
             </div>
           </div>
 
-          {generatedTruck && state !== 'idle' && (
+          {state !== 'idle' && (
             <div className='space-y-4'>
-              <p className='text-lg'>Pieza generada: <strong>{generatedTruck.name}</strong> ({generatedTruck.genre})</p>
-              <audio controls src={generatedTruck.url} className='w-full' />
+              {/* <p className='text-lg'>Pieza generada: <strong>{generatedTruck.name}</strong> ({generatedTruck.genre})</p> */}
+              {/* <audio controls src={generatedTruck.url} className='w-full' /> */}
 
               {state === 'generated' && (
                 <>

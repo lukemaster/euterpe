@@ -6,6 +6,12 @@ __pycache__
 training/gan_executor.ipynb
 training/vae_executor.ipynb
 
+# rating register
+register.csv
+
+# compiled model
+storefront/backend/generator/model/*.pt
+
 # local config
 .env
 

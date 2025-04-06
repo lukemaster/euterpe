@@ -9,6 +9,10 @@ flask-cors = "*"
 flask-sqlalchemy = "*"
 torch = "*"
 torchaudio = "*"
+numpy = "1.26.4"
+python-dotenv = "*"
+librosa = "*"
+pydub = "*"
 
 [dev-packages]
 
