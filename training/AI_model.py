@@ -63,10 +63,8 @@ class AIModel(pl.LightningModule):
         max_col = np.max(spec, axis=0, keepdims=True)
         max_col[max_col == 0] = 1e-8
 
-        # Calcula máscara de elementos significativos en cada columna
         mascara = spec >= (max_col * umbral_relativo)
 
-        # Aplica la máscara
         spec_filtrado = np.where(mascara, spec, 0.0)
 
         return spec_filtrado
@@ -84,31 +82,37 @@ class AIModel(pl.LightningModule):
             genre_tensor = torch.tensor([genre_id], dtype=torch.long).to(cfg.device)
 
             recon = self.model.decoder(z, genre_tensor).squeeze(0).squeeze(0).cpu()
-            recon_db = self.generate_spectrogram(recon)
+            spec_recon = self.generate_spectrogram(recon)
 
-            # Visualizaciones
+            spec_recon = (spec_recon + 1) / 2 * (cfg.DB_MAX - cfg.DB_MIN) + cfg.DB_MIN
+
             plt.figure(figsize=(10, 4))
-            librosa.display.specshow(recon_db, sr=cfg.SAMPLE_RATE, hop_length=cfg.HOP_LENGTH, x_axis='time', y_axis='linear', cmap='magma')
+            librosa.display.specshow(spec_recon, sr=cfg.SAMPLE_RATE, hop_length=cfg.HOP_LENGTH, x_axis='time', y_axis='linear', cmap='magma')
             plt.colorbar(format="%+2.0f dB")
             plt.title(f'Spectrogram [librosa]')
             plt.tight_layout()
             plt.show()
-
             plt.figure(figsize=(10, 4))
-            plt.imshow(recon_db, aspect='auto', origin='lower', cmap='magma', vmin=-80, vmax=0)
-            plt.colorbar()
-            plt.title('Spectrogram [imshow] (vmin=-80)')
-            plt.tight_layout()
-            plt.show()
 
-            spec_db_normalized = (recon_db - cfg.DB_MIN) / (cfg.DB_MAX - cfg.DB_MIN)  # Normalizar a [0, 1]
-            recon_amplitude = 10.0 ** (spec_db_normalized / 20.0)  # Convertir dB a amplitud
+            
+            if cfg.KIND_OF_SPECTROGRAM == 'MEL':
+                extent = [0, spec_recon.shape[1], 0, cfg.SAMPLE_RATE // 2]
+                plt.imshow(spec_recon, aspect='auto', origin='lower', cmap='magma', extent=extent)
+                plt.set_ylabel('Mel scale')
+            else:  # STFT
+                freqs = np.linspace(0, cfg.SAMPLE_RATE // 2, spec_recon.shape[0])
+                extent = [0, spec_recon.shape[1], freqs[0], freqs[-1]]
+                plt.imshow(spec_recon, aspect='auto', origin='lower', cmap='magma', extent=extent)
+                plt.set_ylabel('Frequency (Hz)')
+
+            plt.set_title('Spectrogram [imshow] (vmin=-80)')
+            plt.set_xlabel('Time frames')
 
             # recon_amplitude = librosa.db_to_amplitude(recon_db)
-            
+            recon_amplitude = 10.0 ** (spec_recon / 20.0)
             audio = librosa.griffinlim(recon_amplitude, n_fft=cfg.N_FFT, hop_length=cfg.HOP_LENGTH, win_length=cfg.N_FFT, window='hann', n_iter=100)
             sf.write(output_path, audio, cfg.SAMPLE_RATE)
-            return audio, recon_db
+            return audio, spec_recon
 
         
     def generate_audio_from_mu(self, sample: torch.Tensor, genre_id: int, output_path: str = 'recon.wav'):
@@ -165,7 +169,6 @@ class AIModel(pl.LightningModule):
             recon = self.model.decoder(z, genre_tensor).squeeze(0).squeeze(0).cpu()
             recon_db = self.generate_spectrogram(recon)
 
-            # Visualizaciones
             plt.figure(figsize=(10, 4))
             librosa.display.specshow(recon_db, sr=cfg.SAMPLE_RATE, hop_length=cfg.HOP_LENGTH, x_axis='time', y_axis='linear', cmap='magma')
             plt.colorbar(format="%+2.0f dB")
@@ -195,31 +198,25 @@ class AIModel(pl.LightningModule):
                                 output_path: str = 'interp.wav'):
         self.eval()
         with torch.no_grad():
-            # Preparar inputs
             x1 = sample1.to(cfg.device)
             x2 = sample2.to(cfg.device)
             genre_tensor1 = torch.tensor([genre_id1], dtype=torch.long).to(cfg.device)
             genre_tensor2 = torch.tensor([genre_id2], dtype=torch.long).to(cfg.device)
 
-            # Obtener mu1 y mu2
             mu1, _ = self.model.encoder(x1, genre_tensor1)
             mu2, _ = self.model.encoder(x2, genre_tensor2)
 
-            # Recortar si es necesario
             expected_w = self.model.decoder.w
             if mu1.shape[3] > expected_w:
                 mu1 = mu1[:, :, :, :expected_w]
                 mu2 = mu2[:, :, :, :expected_w]
 
-            # Interpolación
             mu_interp = (1 - alpha) * mu1 + alpha * mu2
             genre_tensor_interp = genre_tensor1 if alpha < 0.5 else genre_tensor2
 
-            # Reconstrucción
             recon = self.model.decoder(mu_interp, genre_tensor_interp).squeeze(0).squeeze(0).cpu()
             recon_db = self.generate_spectrogram(recon)
 
-            # Visualización
             plt.figure(figsize=(10, 4))
             librosa.display.specshow(recon_db,
                                     sr=cfg.SAMPLE_RATE,
@@ -232,7 +229,6 @@ class AIModel(pl.LightningModule):
             plt.tight_layout()
             plt.show()
 
-            # Reconstrucción de audio
             recon_amplitude = librosa.db_to_amplitude(recon_db)
             audio = librosa.griffinlim(
                 recon_amplitude,
@@ -240,7 +236,7 @@ class AIModel(pl.LightningModule):
                 hop_length=cfg.HOP_LENGTH,
                 win_length=cfg.N_FFT,
                 window='hann',
-                n_iter=100  # Mejora de iteraciones
+                n_iter=100
             )
 
             sf.write(output_path, audio, cfg.SAMPLE_RATE)
@@ -253,11 +249,9 @@ class AIModel(pl.LightningModule):
                                  output_path: str = 'scaled_z.wav'):
         self.eval()
         with torch.no_grad():
-            # Preparar entrada
             x = sample.to(cfg.device)
             genre_tensor = torch.tensor([genre_id], dtype=torch.long).to(cfg.device)
 
-            # Obtener mu y logvar
             mu, logvar = self.model.encoder(x, genre_tensor)
 
             expected_w = self.model.decoder.w
@@ -268,16 +262,13 @@ class AIModel(pl.LightningModule):
             elif mu.shape[3] < expected_w:
                 raise ValueError(f"[ERROR] z width {mu.shape[3]} is smaller than expected {expected_w}")
 
-            # Reparametrización con escala
             std = torch.exp(0.5 * logvar)
             eps = torch.randn_like(std)
-            z = mu + scale * eps * std  # <-- ampliación controlada
+            z = mu + scale * eps * std
 
-            # Reconstrucción
             recon = self.model.decoder(z, genre_tensor).squeeze(0).squeeze(0).cpu()
             recon_db = self.generate_spectrogram(recon)
 
-            # Visualización
             plt.figure(figsize=(10, 4))
             librosa.display.specshow(recon_db,
                                     sr=cfg.SAMPLE_RATE,
@@ -290,7 +281,6 @@ class AIModel(pl.LightningModule):
             plt.tight_layout()
             plt.show()
 
-            # Reconstrucción de audio
             recon_amplitude = librosa.db_to_amplitude(recon_db)
             audio = librosa.griffinlim(
                 recon_amplitude,
@@ -298,7 +288,7 @@ class AIModel(pl.LightningModule):
                 hop_length=cfg.HOP_LENGTH,
                 win_length=cfg.N_FFT,
                 window='hann',
-                n_iter=100  # Mejora de iteraciones
+                n_iter=100
             )
 
             sf.write(output_path, audio, cfg.SAMPLE_RATE)

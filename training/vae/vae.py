@@ -176,10 +176,6 @@ class VAE(nn.Module):
 
             return recon
 
-
-
-
-
             
     def __init__(self):
         super().__init__()

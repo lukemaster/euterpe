@@ -117,31 +117,13 @@ def generate_audio_vae(model_path, genre_id):
     model_base = VAE()
     model = VAEAIModelWrapper(model_base)
 
-    checkpoint = torch.load(model_path, map_location="cuda")
-    model.load_state_dict(checkpoint["model"], strict=False)
-
-    model.to("cuda")
+    raw_state = torch.load(model_path, map_location=cfg.device)
+    clean_state = {k.replace("model.", ""): v for k, v in raw_state.items()}
+    model.load_state_dict(clean_state, strict=False)
+    model.to(cfg.device)
     model.eval()
 
-    
     model.generate_audio_from_noise(genre_id, output_path=f'''sample_genre{genre_id}.wav''')
-    datasets_path = '/home/luke/VIU/09MIAR/datasets'
-    valid_files_csv_path = '/home/luke/valid_files.csv'
-
-    dataloader, dataset = get_dataloader(datasets_path,valid_files_csv_path)
-    
-    model.generate_audio_from_mu(next(iter(dataloader))[0], genre_id, output_path=f'''sample_genre{genre_id}_mu.wav''')
-    model.generate_audio_from_scaled_z(next(iter(dataloader))[0], genre_id, output_path=f'''sample_genre{genre_id}_mu.wav''')
-    sample1 = next(iter(dataloader))[0]  # género 0
-    sample2 = next(iter(dataloader))[0]  # género 1
-
-    model.interpolate_between_samples(sample1, 0, sample2, 1, alpha=0.1)
-    sample, _ = next(iter(dataloader))
-    model.generate_audio_from_scaled_z(sample, genre_id=0, scale=4.0)
-    model.generate_audio_from_scaled_z(sample, genre_id=0, scale=3.0)
-    model.generate_audio_from_scaled_z(sample, genre_id=0, scale=2.0)
-    model.generate_audio_from_scaled_z(sample, genre_id=0, scale=1.0)
-
     
 
 if __name__ == '__main__':

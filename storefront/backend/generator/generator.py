@@ -46,14 +46,10 @@ model_path = os.path.join(BASE_DIR, "model", "vae_best.pt")
 class MusicGenerator:
     def __init__(self) -> None:
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.model = VAE()  # pasar args si hacen falta
-        # Cargar state_dict con claves que tienen prefijo 'model.'
+        self.model = VAE()
         raw_state = torch.load(model_path, map_location=self.device)
-
-        # Eliminar prefijo 'model.' si lo tiene
         clean_state = {k.replace("model.", ""): v for k, v in raw_state.items()}
-
-        # Cargar en el modelo real
+        
         self.model.load_state_dict(clean_state, strict=False)
         self.model.to(self.device)
         self.model.eval()
