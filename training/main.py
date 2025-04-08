@@ -20,6 +20,8 @@
 import numpy as np
 
 from training.config import Config
+from training.datasources.jamendo_datasource import JamendoDatasource
+from training.datasources.million_datasaource import MillionDatasource
 np.complex = complex  # Corrección temporal necesaria para librosa
 ########################
 
@@ -52,10 +54,13 @@ print(f'Powered by: {device}')
 
 def get_dataloader(datasets_path, valid_files_csv_path):# TODO: integration inside get_data_module
     fma_dataset = FMADatasource(datasets_path)
+    jamendo_dataset = JamendoDatasource(datasets_path)
+    million_dataset = MillionDatasource(datasets_path)
 
-    file_paths = fma_dataset.get_file_paths()
-    labels = fma_dataset.get_labels()
-    mp3_validator = MP3ValidatorDataset(file_paths,labels,valid_files_csv_path,cfg.TOTAL_DURATION) #TODO: params
+    file_paths = np.concatenate([fma_dataset.get_file_paths(),jamendo_dataset.get_file_paths(),million_dataset.get_file_paths()])
+    labels = fma_dataset.get_labels() + jamendo_dataset.get_labels() + million_dataset.get_labels()
+
+    mp3_validator = MP3ValidatorDataset(file_paths,labels,valid_files_csv_path,cfg.TOTAL_DURATION)
      
     _, dict_dataset = fma_dataset.balanced(mp3_validator.getValidFiles() ,cfg.LIMIT_FILES)
 
