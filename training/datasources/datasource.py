@@ -35,7 +35,7 @@ class Datasource():
         self.GENRE_IDS = {}
         for i, genre_title in enumerate(self.GENRE_TITLE):
             self.GENRE_TRANSLATOR[genre_title] = {
-                'system': 0,
+                'system': i,
                 'fma': None,
                 'million': None,
                 'jamendo': None,

@@ -22,13 +22,17 @@ import json
 import pandas as pd
 from .datasource import Datasource
 
+from training.config import Config
+
+cfg = Config()
+
 class FMADatasource(Datasource):
 
     def __init__(self, datasets_path):
         super().__init__(datasets_path,'fma')
         self.dataset_path = os.path.join(self.datasets_path,'fma','data')
         self.metadata_path = os.path.join(self.dataset_path,'fma_metadata')
-        self.files_path = os.environ.get('FMA_PATH')
+        self.files_path = cfg.FMA_PATH
 
         genres_df = pd.read_csv(os.path.join(self.metadata_path,'genres.csv'))
         genres_df = genres_df[['genre_id','title']]
