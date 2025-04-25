@@ -131,6 +131,55 @@ class GANAIModelWrapper(AIModel):
             self.log("d_loss", d_loss, prog_bar=True)
             self.train_step_metrics[-1].update({"d_loss": d_loss.item()})
 
+        # # === Inicialización a cero tras primera iteración
+        # if self.current_epoch == 0 and batch_idx == 1:
+        #     print("[INFO] Reinicializando pesos de ConvTranspose2d a cero tras primera iteración...")
+        #     for module in self.model.generator.deconv:
+        #         if isinstance(module, torch.nn.ConvTranspose2d):
+        #             torch.nn.init.constant_(module.weight, 0.0)
+        #             if module.bias is not None:
+        #                 torch.nn.init.constant_(module.bias, 0.0)
+
+
+        # ... dentro del método training_step (al final del todo)
+        if batch_idx % 500 == 0:
+            z_np = z[0, 0].detach().cpu().numpy()
+            gen_np = gen_imgs[0, 0].detach().cpu().numpy()
+
+            fig, axes = plt.subplots(2, 1, figsize=(10, 6))
+
+            img1 = librosa.display.specshow(
+                z_np,
+                sr=cfg.SAMPLE_RATE,
+                hop_length=cfg.HOP_LENGTH,
+                x_axis="time",
+                y_axis="linear",
+                ax=axes[0]
+            )
+            axes[0].set_title(f"[Input Z] Epoch {self.current_epoch}, Batch {batch_idx}")
+            fig.colorbar(img1, ax=axes[0], format="%+2.0f dB")
+
+            img2 = librosa.display.specshow(
+                gen_np,
+                sr=cfg.SAMPLE_RATE,
+                hop_length=cfg.HOP_LENGTH,
+                x_axis="time",
+                y_axis="linear",
+                ax=axes[1]
+            )
+            axes[1].set_title(f"[Generated] Epoch {self.current_epoch}, Batch {batch_idx}")
+            fig.colorbar(img2, ax=axes[1], format="%+2.0f dB")
+
+            plt.tight_layout()
+            plt.savefig(os.path.join(self.img_dir, f"spec_epoch{self.current_epoch}_batch{batch_idx}.png"))
+            plt.close(fig)  # Cierra completamente la figura y libera memoria
+
+            del fig, axes, img1, img2, z_np, gen_np  # Elimina referencias explícitas
+            gc.collect()  # Fuerza liberación de memoria
+
+
+
+
     def validation_step(self, batch, batch_idx):
         real_imgs, genres = batch
         batch_size = real_imgs.size(0)

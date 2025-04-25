@@ -94,7 +94,7 @@ class Config(object):
         return cls._instance
 
     def __init_config__(self):
-        self.SEGMENT_DURATION=25
+        self.SEGMENT_DURATION=25 #PLEASE TEST WITH 10 SECONDS.
         self.N_FFT = 2048
         self.HOP_LENGTH = self.N_FFT // 4
         if self.KIND_OF_SPECTROGRAM == 'MEL':

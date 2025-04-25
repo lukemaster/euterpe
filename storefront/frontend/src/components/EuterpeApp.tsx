@@ -147,7 +147,7 @@ useEffect(() => {
                       </label>
                     ))}
                   </div>
-                  <Button onClick={sendRating} disabled={rating === null}>Mandar valoración</Button>
+                  <Button onClick={sendRating} disabled={rating === null || state === 'rated'}>Mandar valoración</Button>
                 </>
               )}
 

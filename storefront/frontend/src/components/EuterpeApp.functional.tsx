@@ -81,6 +81,7 @@ const generateTruck = async (): Promise<void> => {
 
   const sendRating = async (): Promise<void> => {
     if (rating === null) return
+    setState('rated')
     await fetch('/api/rate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -164,7 +165,7 @@ const generateTruck = async (): Promise<void> => {
                       </label>
                     ))}
                   </div>
-                  <Button onClick={sendRating} disabled={rating === null}>Mandar valoración</Button>
+                  <Button onClick={sendRating} disabled={rating === null || state === 'rated'}>Mandar valoración</Button>
                 </>
               )}
 
