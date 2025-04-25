@@ -13,6 +13,9 @@ numpy = "1.26.4"
 python-dotenv = "*"
 librosa = "*"
 pydub = "*"
+pandas = "*"
+matplotlib = "*"
+pytorch-lightning = "*"
 
 [dev-packages]
 

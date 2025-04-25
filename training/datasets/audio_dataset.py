@@ -97,7 +97,7 @@ class AudioDataset(Dataset):
             pad_len = (self.N_FFT - self.HOP_LENGTH) // 2
             y = np.pad(y, pad_width=(pad_len, pad_len), mode='reflect')
 
-            start = segment_index * segment_samples
+            start = 0 * segment_samples
             end = start + segment_samples
             y_segment = y[start:end]
             y_segment = np.pad(y_segment, pad_width=(pad_len, pad_len), mode='reflect')
