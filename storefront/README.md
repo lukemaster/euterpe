@@ -24,23 +24,32 @@
 ```bash
 cd backend
 pipenv install
-pipenv run python app.py
+PYTHONPATH=/path_to_/euterpe pipenv run python euterpe/storefront/backend/app.py
 ```
 
 Esto ejecutará el backend en `http://localhost:5000`.
 
 Asegúrate de que el directorio `static/generated` existe para guardar los audios.
 
+
 ### 2. Frontend
 
 ```bash
 cd frontend
 npm install
+```
+
+```bash
 npm run dev
 ```
 
 Esto lanza el frontend en `http://localhost:5173`.
 
+```bash
+npm run dev -- --host
+```
+
+Para que la instancia de servidor frontend sea accesible desde un host de LAN
 ---
 
 ## Uso

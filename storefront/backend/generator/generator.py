@@ -47,17 +47,9 @@ OUT_PATH = "static/generated"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 model_path = os.path.join(BASE_DIR, "model", "gan_best.pt")
 
-
 class MusicGenerator:
     def __init__(self) -> None:
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        # self.model = VAE()
-        # raw_state = torch.load(model_path, map_location=self.device)
-        # clean_state = {k.replace("model.", ""): v for k, v in raw_state.items()}
-        
-        # self.model.load_state_dict(clean_state, strict=False)
-        # self.model.to(self.device)
-        # self.model.eval()
         self.model = GANAIModelWrapper(GAN(), is_eval=True).to(self.device)
         checkpoint = torch.load(model_path, map_location=self.device)
         filtered = {k: v for k, v in checkpoint.items() if k in self.model.state_dict() and v.shape == self.model.state_dict()[k].shape}
@@ -75,19 +67,6 @@ class MusicGenerator:
 
     def generate(self, genre: int, dest: str, track_name: str) -> any:
         try:
-            # genre_tensor = torch.tensor([genre], dtype=torch.long).to(self.device)
-            # z_shape = (1, self.model.decoder.latent_channels, self.model.decoder.h, self.model.decoder.w)
-            # noise = torch.randn(z_shape).to(self.device)
-            # recon = self.model.decoder(noise, genre_tensor).squeeze(0).squeeze(0).cpu()
-            # recon = recon.detach().cpu().numpy()
-            # recon_db = (recon + 1) / 2 * (cfg.DB_MAX - cfg.DB_MIN) + cfg.DB_MIN
-            # spec_db_normalized = (recon_db - cfg.DB_MIN) / (cfg.DB_MAX - cfg.DB_MIN)  # Normalizar a [0, 1]
-            # recon_amplitude = 10.0 ** (spec_db_normalized / 20.0)  # Convertir dB a amplitud
-            
-            # file_name_wav = os.path.join(BASE_DIR,dest,track_name.replace('mp3','wav'))
-            # audio = librosa.griffinlim(recon_amplitude, n_fft=cfg.N_FFT, hop_length=cfg.HOP_LENGTH, win_length=cfg.N_FFT, window='hann', n_iter=100)
-            # print(file_name_wav)
-
             single_genre_tensor = torch.tensor([genre], device=self.device)
             z_list = []
             single_genre_tensor = torch.tensor([genre], device=self.device)
